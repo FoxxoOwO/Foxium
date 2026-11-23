@@ -7,6 +7,7 @@ import com.chrogecko.browser.feature.favicons.faviconHost
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -39,7 +40,7 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
     private val cacheMutex = Mutex()
 
     /** Separate cache per feed so switching Top/New never shows the other list's stories. */
-    private val cache = HashMap<String, Pair<Long, List<DiscoverItem>>>()
+    private val cache = ConcurrentHashMap<String, Pair<Long, List<DiscoverItem>>>()
 
     suspend fun suggestions(
         limit: Int = 12,

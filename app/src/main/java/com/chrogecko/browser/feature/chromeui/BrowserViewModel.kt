@@ -363,8 +363,11 @@ class BrowserViewModel @Inject constructor(
     val hiddenDiscover: StateFlow<Set<String>> = preferences.hiddenDiscover
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
-    /** Loads the Discover feed; [force] bypasses the repository cache. */
-    fun loadDiscover(force: Boolean = false) {
+    /**
+     * Loads the Discover feed. Set [force] to re-evaluate changed preferences and [bypassCache]
+     * to force a fresh network fetch instead of reading the 10-minute repository cache.
+     */
+    fun loadDiscover(force: Boolean = false, bypassCache: Boolean = force) {
         if (!force && discoverRequested) return
         discoverRequested = true
         if (!discoverEnabled.value) {
@@ -380,13 +383,13 @@ class BrowserViewModel @Inject constructor(
         viewModelScope.launch {
             val items = discoverRepository.suggestions(
                 limit = discoverLimit.value,
-                force = force,
+                force = bypassCache,
                 sources = discoverSources.value,
                 hidden = hiddenDiscover.value,
                 mode = mode,
                 rssFeeds = rssFeeds,
             )
-            if (items.isNotEmpty() || !force || mode == DISCOVER_MODE_RSS) {
+            if (items.isNotEmpty() || !bypassCache || mode == DISCOVER_MODE_RSS) {
                 _discoverItems.value = items
             }
         }
@@ -855,6 +858,7 @@ class BrowserViewModel @Inject constructor(
             rememberClosed(listOf(tab), localizedString(if (tab.isPrivate) R.string.msg_incognito_tab_closed else R.string.msg_tab_closed))
         }
         val parentId = openerTabIds.remove(id)
+        openerTabIds.values.removeAll { it == id }
         _tabs.update { list -> list.filterNot { it.id == id } }
         observers.remove(id)?.cancel()
         iconQueriedUrls.remove(id)
@@ -1994,6 +1998,8 @@ class BrowserViewModel @Inject constructor(
                     ExternalIntentHandler.launchIntentUri(runtime.appContext, url) { fallback ->
                         tab.session.load(fallback)
                     }
+                ExternalIntentHandler.isExternalAppScheme(url) ->
+                    ExternalIntentHandler.launchExternalUri(runtime.appContext, url)
                 responseIsUserscript(url) -> {
                     installUserscript(url)
                     true

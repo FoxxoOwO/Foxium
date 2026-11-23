@@ -27,12 +27,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.mozilla.geckoview.WebResponse
@@ -193,10 +195,14 @@ class DownloadManager @Inject constructor(
             android.util.Log.i("ChroGeckoDownloads", "completed id=$id size=$written")
             notifyCompleted(id, fileName, destination.path)
         } catch (error: CancellationException) {
+            notificationManager?.cancel(id.toInt())
             target?.let { DownloadStorage.delete(context, it.path) }
-            repository.cancelled(id)
+            withContext(NonCancellable) {
+                repository.cancelled(id)
+            }
             throw error
         } catch (error: Exception) {
+            notificationManager?.cancel(id.toInt())
             target?.let { DownloadStorage.delete(context, it.path) }
             repository.failed(id, error.message ?: "Download failed")
         } finally {

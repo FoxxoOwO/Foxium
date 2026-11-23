@@ -1151,7 +1151,7 @@ private fun NewTabPageHost(
         discoverLimit,
         hiddenDiscover,
     ) {
-        viewModel.loadDiscover(force = true)
+        viewModel.loadDiscover(force = true, bypassCache = false)
     }
     val shortcutTiles = remember(bookmarkList, historyList, hiddenShortcuts, customShortcuts) {
         val derived = buildNewTabShortcuts(
@@ -1191,7 +1191,7 @@ private fun NewTabPageHost(
         searchEngineName = activeSearchEngine.name,
         onAddShortcut = viewModel::addCustomShortcut,
         onRenameShortcut = viewModel::renameCustomShortcut,
-        onRefreshDiscover = { viewModel.loadDiscover(force = true) },
+        onRefreshDiscover = { viewModel.loadDiscover(force = true, bypassCache = true) },
         onSetDiscoverEnabled = viewModel::setDiscoverEnabled,
         onSetDiscoverMode = viewModel::setDiscoverMode,
         onToggleDiscoverSource = viewModel::toggleDiscoverSource,

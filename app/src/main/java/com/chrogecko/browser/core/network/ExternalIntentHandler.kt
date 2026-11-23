@@ -3,17 +3,41 @@ package com.chrogecko.browser.core.network
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import androidx.core.net.toUri
 import java.io.ByteArrayOutputStream
 import java.net.URI
 
 /**
- * Safely launches Android `intent://` links from web pages (such as Google Pay / Google Wallet
- * handoffs or 3-D Secure banking app challenges), falling back to `browser_fallback_url` when the
+ * Safely launches Android `intent://` links and standard external app URIs (`mailto:`, `tel:`,
+ * `sms:`, `geo:`, `market:`) from web pages, falling back to `browser_fallback_url` when the
  * target app is unavailable.
  */
 object ExternalIntentHandler {
 
+    private val EXTERNAL_APP_SCHEMES = setOf("mailto", "tel", "sms", "smsto", "geo", "market")
+
     fun isIntentUri(url: String): Boolean = url.startsWith("intent:", ignoreCase = true)
+
+    fun isExternalAppScheme(url: String): Boolean {
+        val colon = url.indexOf(':')
+        if (colon <= 0) return false
+        return url.substring(0, colon).trim().lowercase() in EXTERNAL_APP_SCHEMES
+    }
+
+    fun launchExternalUri(context: Context, uri: String): Boolean {
+        if (!isExternalAppScheme(uri)) return false
+        val intent = Intent(Intent.ACTION_VIEW, uri.trim().toUri())
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (_: ActivityNotFoundException) {
+            true
+        } catch (_: SecurityException) {
+            true
+        }
+    }
 
     fun launchIntentUri(context: Context, uri: String, onFallbackUrl: (String) -> Unit): Boolean {
         if (!isIntentUri(uri)) return false
@@ -27,6 +51,9 @@ object ExternalIntentHandler {
         intent.selector = null
         val dataScheme = intent.data?.scheme?.lowercase()
         if (dataScheme == "file" || dataScheme == "content") return true
+        intent.removeFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+        )
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return try {
             context.startActivity(intent)

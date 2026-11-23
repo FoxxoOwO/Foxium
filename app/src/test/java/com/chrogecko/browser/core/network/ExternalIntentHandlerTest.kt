@@ -34,4 +34,23 @@ class ExternalIntentHandlerTest {
         val missing = "intent://x#Intent;scheme=https;package=com.example.bank;end"
         assertNull(ExternalIntentHandler.extractFallbackUrlFromIntentUri(missing))
     }
+
+    @Test
+    fun detectsAllowedExternalAppSchemesAndRejectsWebOrLocalSchemes() {
+        assertTrue(ExternalIntentHandler.isExternalAppScheme("mailto:support@example.com"))
+        assertTrue(ExternalIntentHandler.isExternalAppScheme("TEL:+420123456789"))
+        assertTrue(ExternalIntentHandler.isExternalAppScheme("sms:+420123456789"))
+        assertTrue(ExternalIntentHandler.isExternalAppScheme("smsto:+420123456789"))
+        assertTrue(ExternalIntentHandler.isExternalAppScheme("geo:50.0755,14.4378"))
+        assertTrue(ExternalIntentHandler.isExternalAppScheme("market://details?id=com.example"))
+
+        assertFalse(ExternalIntentHandler.isExternalAppScheme("https://example.com"))
+        assertFalse(ExternalIntentHandler.isExternalAppScheme("http://example.com"))
+        assertFalse(ExternalIntentHandler.isExternalAppScheme("javascript:alert(1)"))
+        assertFalse(ExternalIntentHandler.isExternalAppScheme("file:///etc/passwd"))
+        assertFalse(ExternalIntentHandler.isExternalAppScheme("content://com.example/item"))
+        assertFalse(ExternalIntentHandler.isExternalAppScheme("data:text/html,hi"))
+        assertFalse(ExternalIntentHandler.isExternalAppScheme("about:blank"))
+        assertFalse(ExternalIntentHandler.isExternalAppScheme("noscheme"))
+    }
 }

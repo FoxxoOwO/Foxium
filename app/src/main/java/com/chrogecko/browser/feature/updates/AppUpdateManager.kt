@@ -1,5 +1,6 @@
 package com.chrogecko.browser.feature.updates
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -12,6 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -61,9 +63,11 @@ class AppUpdateManager @Inject constructor(
 
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
+    private val downloading = AtomicBoolean(false)
 
     suspend fun checkForUpdates(force: Boolean) {
-        if (_state.value is UpdateState.Downloading) return
+        if (downloading.get() || _state.value is UpdateState.Downloading) return
+        if (!force && _state.value is UpdateState.ReadyToInstall) return
         if (!force) {
             if (!preferences.autoUpdateEnabled.first()) return
             val lastCheck = preferences.lastUpdateCheckMs.first()
@@ -123,108 +127,112 @@ class AppUpdateManager @Inject constructor(
     }
 
     suspend fun downloadUpdate(update: AvailableUpdate) {
-        if (_state.value is UpdateState.Downloading) return
         if (!AppUpdateParser.isTrustedHttpsUrl(update.apkUrl)) {
             _state.value = UpdateState.Error("Untrusted download URL")
             return
         }
+        if (!downloading.compareAndSet(false, true)) return
 
-        _state.value = UpdateState.Downloading(
-            update = update,
-            downloadedBytes = 0L,
-            totalBytes = update.apkSizeBytes,
-        )
+        try {
+            _state.value = UpdateState.Downloading(
+                update = update,
+                downloadedBytes = 0L,
+                totalBytes = update.apkSizeBytes,
+            )
 
-        val downloadResult = try {
-            val file = withContext(Dispatchers.IO) {
-                val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
-                updatesDir.listFiles()?.forEach { oldFile ->
-                    if (oldFile.isFile) oldFile.delete()
-                }
-
-                val safeName = update.apkName
-                    .replace(Regex("[^A-Za-z0-9._-]"), "_")
-                    .ifBlank { "foxium-update.apk" }
-                val partFile = File(updatesDir, "$safeName.part")
-                val targetFile = File(updatesDir, safeName)
-
-                val request = Request.Builder()
-                    .url(update.apkUrl)
-                    .header("User-Agent", "Foxium/${BuildConfig.VERSION_NAME}")
-                    .get()
-                    .build()
-
-                httpClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        throw IOException("HTTP ${response.code}")
+            val downloadResult = try {
+                val file = withContext(Dispatchers.IO) {
+                    val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
+                    updatesDir.listFiles()?.forEach { oldFile ->
+                        if (oldFile.isFile) oldFile.delete()
                     }
-                    val finalUrl = response.request.url.toString()
-                    if (!AppUpdateParser.isTrustedHttpsUrl(finalUrl)) {
-                        throw IOException("Untrusted redirect URL")
-                    }
-                    val body = response.body ?: throw IOException("Empty download body")
-                    val totalBytes = body.contentLength().takeIf { it > 0L } ?: update.apkSizeBytes
-                    val buffer = ByteArray(16 * 1024)
-                    var downloaded = 0L
-                    var lastReportMs = 0L
 
-                    body.byteStream().use { input ->
-                        FileOutputStream(partFile).use { output ->
-                            while (true) {
-                                val read = input.read(buffer)
-                                if (read == -1) break
-                                output.write(buffer, 0, read)
-                                downloaded += read
-                                val now = System.currentTimeMillis()
-                                if (now - lastReportMs >= 150L) {
-                                    lastReportMs = now
-                                    _state.value = UpdateState.Downloading(
-                                        update = update,
-                                        downloadedBytes = downloaded,
-                                        totalBytes = totalBytes,
-                                    )
-                                }
-                            }
-                            output.flush()
+                    val safeName = update.apkName
+                        .replace(Regex("[^A-Za-z0-9._-]"), "_")
+                        .ifBlank { "foxium-update.apk" }
+                    val partFile = File(updatesDir, "$safeName.part")
+                    val targetFile = File(updatesDir, safeName)
+
+                    val request = Request.Builder()
+                        .url(update.apkUrl)
+                        .header("User-Agent", "Foxium/${BuildConfig.VERSION_NAME}")
+                        .get()
+                        .build()
+
+                    httpClient.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) {
+                            throw IOException("HTTP ${response.code}")
                         }
+                        val finalUrl = response.request.url.toString()
+                        if (!AppUpdateParser.isTrustedHttpsUrl(finalUrl)) {
+                            throw IOException("Untrusted redirect URL")
+                        }
+                        val body = response.body ?: throw IOException("Empty download body")
+                        val totalBytes = body.contentLength().takeIf { it > 0L } ?: update.apkSizeBytes
+                        val buffer = ByteArray(16 * 1024)
+                        var downloaded = 0L
+                        var lastReportMs = 0L
+
+                        body.byteStream().use { input ->
+                            FileOutputStream(partFile).use { output ->
+                                while (true) {
+                                    val read = input.read(buffer)
+                                    if (read == -1) break
+                                    output.write(buffer, 0, read)
+                                    downloaded += read
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastReportMs >= 150L) {
+                                        lastReportMs = now
+                                        _state.value = UpdateState.Downloading(
+                                            update = update,
+                                            downloadedBytes = downloaded,
+                                            totalBytes = totalBytes,
+                                        )
+                                    }
+                                }
+                                output.flush()
+                            }
+                        }
+
+                        _state.value = UpdateState.Downloading(
+                            update = update,
+                            downloadedBytes = downloaded,
+                            totalBytes = totalBytes.coerceAtLeast(downloaded),
+                        )
                     }
 
-                    _state.value = UpdateState.Downloading(
-                        update = update,
-                        downloadedBytes = downloaded,
-                        totalBytes = totalBytes.coerceAtLeast(downloaded),
-                    )
+                    if (targetFile.exists()) targetFile.delete()
+                    if (!partFile.renameTo(targetFile)) {
+                        throw IOException("Could not finalize update file")
+                    }
+                    targetFile
                 }
-
-                if (targetFile.exists()) targetFile.delete()
-                if (!partFile.renameTo(targetFile)) {
-                    throw IOException("Could not finalize update file")
-                }
-                targetFile
+                Result.success(file)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                Result.failure(t)
             }
-            Result.success(file)
-        } catch (ce: CancellationException) {
-            throw ce
-        } catch (t: Throwable) {
-            Result.failure(t)
-        }
 
-        downloadResult.fold(
-            onSuccess = { apkFile ->
-                val canInstall = context.packageManager.canRequestPackageInstalls()
-                _state.value = UpdateState.ReadyToInstall(
-                    update = update,
-                    apkFile = apkFile,
-                    needsInstallPermission = !canInstall,
-                )
-                if (canInstall) {
-                    launchInstaller(apkFile)
-                }
-            },
-            onFailure = { error ->
-                _state.value = UpdateState.Error(error.message ?: "Download failed")
-            },
-        )
+            downloadResult.fold(
+                onSuccess = { apkFile ->
+                    val canInstall = context.packageManager.canRequestPackageInstalls()
+                    _state.value = UpdateState.ReadyToInstall(
+                        update = update,
+                        apkFile = apkFile,
+                        needsInstallPermission = !canInstall,
+                    )
+                    if (canInstall) {
+                        launchInstaller(apkFile)
+                    }
+                },
+                onFailure = { error ->
+                    _state.value = UpdateState.Error(error.message ?: "Download failed")
+                },
+            )
+        } finally {
+            downloading.set(false)
+        }
     }
 
     fun launchInstaller(file: File): Boolean {
@@ -242,8 +250,16 @@ class AppUpdateManager @Inject constructor(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 "package:${context.packageName}".toUri(),
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(permissionIntent)
-            return false
+            return try {
+                context.startActivity(permissionIntent)
+                false
+            } catch (error: ActivityNotFoundException) {
+                _state.value = UpdateState.Error(error.message ?: "Cannot open install settings")
+                false
+            } catch (error: SecurityException) {
+                _state.value = UpdateState.Error(error.message ?: "Cannot open install settings")
+                false
+            }
         }
 
         if (current is UpdateState.ReadyToInstall && current.needsInstallPermission) {
@@ -257,8 +273,16 @@ class AppUpdateManager @Inject constructor(
         val installIntent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(installIntent)
-        return true
+        return try {
+            context.startActivity(installIntent)
+            true
+        } catch (error: ActivityNotFoundException) {
+            _state.value = UpdateState.Error(error.message ?: "No package installer found")
+            false
+        } catch (error: SecurityException) {
+            _state.value = UpdateState.Error(error.message ?: "Cannot launch package installer")
+            false
+        }
     }
 
     suspend fun dismissUpdateBanner(tagName: String) {
