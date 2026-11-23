@@ -1,5 +1,7 @@
 package com.chrogecko.browser.core.database.repository
 
+import androidx.room.withTransaction
+import com.chrogecko.browser.core.database.ChroGeckoDatabase
 import com.chrogecko.browser.core.database.dao.TabDao
 import com.chrogecko.browser.core.database.dao.TabGroupDao
 import com.chrogecko.browser.core.database.entity.TabEntity
@@ -11,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Singleton
 class TabRepository @Inject constructor(
+    private val database: ChroGeckoDatabase,
     private val tabDao: TabDao,
     private val groupDao: TabGroupDao,
 ) {
@@ -70,12 +73,13 @@ class TabRepository @Inject constructor(
 
     suspend fun closeAllPrivate() = tabDao.deleteByProfile(true)
 
-    suspend fun createGroup(title: String, color: Int, tabIds: List<String>): TabGroupEntity {
-        val group = TabGroupEntity(id = UUID.randomUUID().toString(), title = title, color = color)
-        groupDao.upsert(group)
-        tabIds.forEach { tabDao.assignGroup(it, group.id) }
-        return group
-    }
+    suspend fun createGroup(title: String, color: Int, tabIds: List<String>): TabGroupEntity =
+        database.withTransaction {
+            val group = TabGroupEntity(id = UUID.randomUUID().toString(), title = title, color = color)
+            groupDao.upsert(group)
+            tabIds.forEach { tabDao.assignGroup(it, group.id) }
+            group
+        }
 
     suspend fun assignToGroup(tabId: String, groupId: String?) = tabDao.assignGroup(tabId, groupId)
 

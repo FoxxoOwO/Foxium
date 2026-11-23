@@ -1230,6 +1230,7 @@ class BrowserViewModel @Inject constructor(
         backGestureActive = active
         if (active) {
             dismissContextMenu()
+            clearSelection()
         } else {
             suppressContextMenuUntilMs = android.os.SystemClock.elapsedRealtime() + 350L
         }
@@ -1765,7 +1766,13 @@ class BrowserViewModel @Inject constructor(
                     if (tab == null) {
                         _selection.value = null
                     } else {
-                        tab.session.selection.collect { _selection.value = it }
+                        tab.session.selection.collect { menu ->
+                            if (menu != null && isContextMenuSuppressed()) {
+                                tab.session.clearSelection()
+                                return@collect
+                            }
+                            _selection.value = menu
+                        }
                     }
                 }
             }

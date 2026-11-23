@@ -125,12 +125,14 @@ function setValue(field, value) {
 }
 
 let lastSignature = "";
+let lastFocusedForm = null;
 
 function reportFocus(event) {
   const field = event.target;
   if (!isFillable(field)) return;
   const focusToken = guessToken(field);
   if (!focusToken) return;
+  lastFocusedForm = field.form || null;
   const fields = formFields(field);
   const tokens = tokensOf(fields);
   const kind = tokens.some((token) => CARD_TOKENS.includes(token)) ? "card" : "address";
@@ -155,11 +157,13 @@ browser.runtime.onMessage.addListener((message) => {
   if (!message || message.type !== "autofill/fill") return;
   const values = message.values || {};
   const active = document.activeElement;
-  const scope = active && active.form ? active.form : document;
+  const remembered = lastFocusedForm && lastFocusedForm.isConnected !== false ? lastFocusedForm : null;
+  const scope = (active && active.form) || remembered || document;
   const fields = formFields(scope);
   for (const field of fields) {
     const token = guessToken(field);
     if (token && values[token] !== undefined) setValue(field, values[token]);
   }
+  lastFocusedForm = null;
   lastSignature = "";
 });

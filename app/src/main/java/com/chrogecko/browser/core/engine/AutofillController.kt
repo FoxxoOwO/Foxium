@@ -97,6 +97,8 @@ class AutofillController @Inject constructor(
 
     fun detach(geckoSession: GeckoSession) {
         if (suggestionSession?.get() === geckoSession) {
+            focusJob?.cancel()
+            focusJob = null
             suggestionSession = null
             _suggestion.value = null
         }
@@ -111,13 +113,16 @@ class AutofillController @Inject constructor(
         val fields = _suggestion.value ?: return
         if (fields.usernameId == null && fields.passwordId == null) return
         scope.launch {
-            val password = logins.password(entry.id) ?: return@launch
-            val values = SparseArray<CharSequence>()
-            fields.usernameId?.let { values.put(it, entry.username) }
-            fields.passwordId?.let { values.put(it, password) }
-            geckoSession.autofillSession.autofill(values)
-            suggestionSession = null
-            _suggestion.value = null
+            try {
+                val password = logins.password(entry.id) ?: return@launch
+                val values = SparseArray<CharSequence>()
+                fields.usernameId?.let { values.put(it, entry.username) }
+                fields.passwordId?.let { values.put(it, password) }
+                runCatching { geckoSession.autofillSession.autofill(values) }
+            } finally {
+                suggestionSession = null
+                _suggestion.value = null
+            }
         }
     }
 
@@ -255,13 +260,17 @@ class AutofillController @Inject constructor(
             focusJob?.cancel()
             focusJob = scope.launch {
                 val entries = logins.forHost(host)
-                if (entries.isEmpty()) {
+                val fields = if (entries.isEmpty()) {
+                    null
+                } else {
+                    runCatching { loginFields(session) }.getOrNull()
+                }
+                if (entries.isEmpty() || fields == null) {
                     suggestionSession = null
                     _suggestion.value = null
                 } else {
-                    val fields = loginFields(session)
                     suggestionSession = WeakReference(session)
-                    _suggestion.value = Suggestion(host, entries, fields?.first, fields?.second)
+                    _suggestion.value = Suggestion(host, entries, fields.first, fields.second)
                 }
             }
         }
@@ -284,9 +293,13 @@ class AutofillController @Inject constructor(
             val nodes = walk(autofillSession.root)
             val passwordNode = nodes.firstOrNull { it.hint == Autofill.Hint.PASSWORD }
             val usernameNode = nodes.firstOrNull { it.isUsernameField() }
-            val password = passwordNode?.let { autofillSession.dataFor(it).value }.orEmpty()
+            val password = passwordNode?.let {
+                runCatching { autofillSession.dataFor(it).value }.getOrNull()
+            }.orEmpty()
             val username = capturedUsername.ifBlank {
-                usernameNode?.let { autofillSession.dataFor(it).value }.orEmpty()
+                usernameNode?.let {
+                    runCatching { autofillSession.dataFor(it).value }.getOrNull()
+                }.orEmpty()
             }
             val host = hostOf(passwordNode?.domain ?: node.domain) ?: return
             if (password.isEmpty() || username.isBlank()) return

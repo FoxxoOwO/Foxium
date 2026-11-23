@@ -94,9 +94,39 @@
   const LONG_PRESS_MS = 500;
   const LONG_PRESS_SLOP = 10;
   const EDGE_GUARD_PX = 32;
+  const EDGE_SELECTION_GUARD_MS = 600;
   let pressTimer = null;
   let pressX = 0;
   let pressY = 0;
+  let edgeTouchActive = false;
+  let edgeSelectionGuardUntil = 0;
+
+  function isEdgeTouch(touch) {
+    const width = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 0;
+    return width > EDGE_GUARD_PX * 2 && (touch.clientX < EDGE_GUARD_PX || touch.clientX > width - EDGE_GUARD_PX);
+  }
+
+  function isEdgeSelectionSuppressed() {
+    return edgeTouchActive || Date.now() < edgeSelectionGuardUntil;
+  }
+
+  function clearPageSelection() {
+    try {
+      const sel = window.getSelection && window.getSelection();
+      if (sel && !sel.isCollapsed && typeof sel.removeAllRanges === "function") {
+        sel.removeAllRanges();
+      }
+    } catch (error) {
+      // Ignore selection access errors on restricted frames.
+    }
+  }
+
+  function endEdgeTouch() {
+    if (!edgeTouchActive) return;
+    edgeTouchActive = false;
+    edgeSelectionGuardUntil = Date.now() + EDGE_SELECTION_GUARD_MS;
+    clearPageSelection();
+  }
 
   function absolute(value, base) {
     if (!value) return null;
@@ -131,14 +161,25 @@
     }
   }
 
+  function cancelInteraction() {
+    cancelPress();
+    endEdgeTouch();
+  }
+
   addEventListener("touchstart", (event) => {
     cancelPress();
-    if (event.touches.length !== 1) return;
-    const touch = event.touches[0];
-    const width = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 0;
-    if (width > EDGE_GUARD_PX * 2 && (touch.clientX < EDGE_GUARD_PX || touch.clientX > width - EDGE_GUARD_PX)) {
+    if (event.touches.length !== 1) {
+      endEdgeTouch();
       return;
     }
+    const touch = event.touches[0];
+    if (isEdgeTouch(touch)) {
+      edgeTouchActive = true;
+      edgeSelectionGuardUntil = Date.now() + EDGE_SELECTION_GUARD_MS;
+      return;
+    }
+    edgeTouchActive = false;
+    edgeSelectionGuardUntil = 0;
     pressX = touch.clientX;
     pressY = touch.clientY;
     const target = event.target;
@@ -157,12 +198,25 @@
     }
   }, { passive: true, capture: true });
 
-  addEventListener("touchend", cancelPress, { passive: true, capture: true });
-  addEventListener("touchcancel", cancelPress, { passive: true, capture: true });
-  addEventListener("pointercancel", cancelPress, { passive: true, capture: true });
+  addEventListener("touchend", cancelInteraction, { passive: true, capture: true });
+  addEventListener("touchcancel", cancelInteraction, { passive: true, capture: true });
+  addEventListener("pointercancel", cancelInteraction, { passive: true, capture: true });
   addEventListener("scroll", cancelPress, { passive: true, capture: true });
-  addEventListener("blur", cancelPress);
-  document.addEventListener("visibilitychange", cancelPress);
+  addEventListener("blur", cancelInteraction);
+  document.addEventListener("visibilitychange", cancelInteraction);
+
+  document.addEventListener("selectstart", (event) => {
+    if (!isEdgeSelectionSuppressed()) return;
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    clearPageSelection();
+  }, true);
+
+  document.addEventListener("selectionchange", () => {
+    if (!isEdgeSelectionSuppressed()) return;
+    clearPageSelection();
+  }, true);
 
   // On addons.mozilla.org the page's own "Add to Firefox" button should install through the
   // browser, not download a file. Ask the app to use its WebExtension installer instead.

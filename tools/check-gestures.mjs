@@ -10,6 +10,25 @@ function runHarness() {
   const messages = [];
   let nextTimerId = 1;
   const timers = new Map();
+  let nowMs = 10000;
+  let selectionCollapsed = true;
+  let selectionClearedCount = 0;
+
+  class MockDate extends Date {
+    static now() {
+      return nowMs;
+    }
+  }
+
+  const mockSelection = {
+    get isCollapsed() {
+      return selectionCollapsed;
+    },
+    removeAllRanges() {
+      selectionClearedCount += 1;
+      selectionCollapsed = true;
+    },
+  };
 
   function addListener(map, type, fn) {
     if (!map.has(type)) map.set(type, []);
@@ -26,6 +45,9 @@ function runHarness() {
     window: {
       innerWidth: 400,
       scrollY: 0,
+      getSelection() {
+        return mockSelection;
+      },
     },
     document: {
       documentElement: { clientWidth: 400, scrollTop: 0 },
@@ -57,7 +79,7 @@ function runHarness() {
     clearTimeout(id) {
       timers.delete(id);
     },
-    Date,
+    Date: MockDate,
     Math,
     URL,
     Promise,
@@ -131,6 +153,70 @@ function runHarness() {
   dispatch(documentListeners, "visibilitychange", {});
   flushTimers();
   assert.equal(messages.filter((m) => m.type === "contextmenu/request").length, 0);
+
+  function selectStartEvent() {
+    const event = {
+      defaultPrevented: false,
+      preventDefault() {
+        event.defaultPrevented = true;
+      },
+    };
+    return event;
+  }
+
+  // 5. Left-edge touch suppresses selectstart and clears accidental selection, including brief cooldown after touchcancel.
+  selectionClearedCount = 0;
+  selectionCollapsed = false;
+  dispatch(windowListeners, "touchstart", touchEvent(10));
+  const leftSelect = selectStartEvent();
+  dispatch(documentListeners, "selectstart", leftSelect);
+  assert.equal(leftSelect.defaultPrevented, true);
+  assert.equal(selectionCollapsed, true);
+  assert.equal(selectionClearedCount, 1);
+
+  selectionCollapsed = false;
+  dispatch(documentListeners, "selectionchange", {});
+  assert.equal(selectionCollapsed, true);
+  assert.equal(selectionClearedCount, 2);
+
+  selectionCollapsed = false;
+  dispatch(windowListeners, "touchcancel", touchEvent(10));
+  assert.equal(selectionCollapsed, true);
+  assert.equal(selectionClearedCount, 3);
+
+  nowMs += 200;
+  const postCancelSelect = selectStartEvent();
+  dispatch(documentListeners, "selectstart", postCancelSelect);
+  assert.equal(postCancelSelect.defaultPrevented, true);
+
+  // After cooldown expires, selectstart is allowed again.
+  nowMs += 500;
+  const expiredSelect = selectStartEvent();
+  dispatch(documentListeners, "selectstart", expiredSelect);
+  assert.equal(expiredSelect.defaultPrevented, false);
+
+  // 6. Right-edge touch suppresses selectstart and clears accidental selection.
+  selectionClearedCount = 0;
+  selectionCollapsed = false;
+  dispatch(windowListeners, "touchstart", touchEvent(390));
+  const rightSelect = selectStartEvent();
+  dispatch(documentListeners, "selectstart", rightSelect);
+  assert.equal(rightSelect.defaultPrevented, true);
+  assert.equal(selectionCollapsed, true);
+  assert.equal(selectionClearedCount, 1);
+  dispatch(windowListeners, "touchend", touchEvent(390));
+
+  // 7. Center-screen touch immediately clears an active edge cooldown so normal text selection works.
+  selectionClearedCount = 0;
+  selectionCollapsed = false;
+  nowMs += 100;
+  dispatch(windowListeners, "touchstart", touchEvent(200));
+  const centerSelect = selectStartEvent();
+  dispatch(documentListeners, "selectstart", centerSelect);
+  dispatch(documentListeners, "selectionchange", {});
+  assert.equal(centerSelect.defaultPrevented, false);
+  assert.equal(selectionCollapsed, false);
+  assert.equal(selectionClearedCount, 0);
 }
 
 runHarness();

@@ -72,12 +72,20 @@ class MirrorCaptureService : Service() {
         } else {
             0
         }
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            buildNotification(),
-            serviceType,
-        )
+        val startedForeground = runCatching {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                buildNotification(),
+                serviceType,
+            )
+        }.onFailure { error ->
+            Log.w(TAG, "cannot start foreground: ${error.message}")
+        }.isSuccess
+        if (!startedForeground) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent?.getParcelableExtra(EXTRA_DATA, Intent::class.java)
@@ -189,36 +197,50 @@ class MirrorCaptureService : Service() {
 
     /** Teardown must run on the same worker that encodes frames, otherwise a recycle/close can
      * happen in the middle of toJpeg() and crash the process. */
+    @Synchronized
     private fun release() {
         MirrorFrames.clear()
         val handler = workerHandler
-        if (handler != null && handler.looper.thread.isAlive) {
-            handler.post {
-                releaseResources()
-                // Let already queued callbacks finish before quitting the looper.
+        val workerThread = thread
+        val vd = virtualDisplay
+        val rdr = reader
+        val proj = projection
+        virtualDisplay = null
+        reader = null
+        projection = null
+        workerHandler = null
+        thread = null
+        lastFrameAt = 0L
+        firstFrameLogged = false
+        if (handler != null && workerThread != null && workerThread.isAlive) {
+            if (Looper.myLooper() === handler.looper) {
+                releaseResources(vd, rdr, proj)
+                handler.post { workerThread.quitSafely() }
+            } else {
                 handler.post {
-                    thread?.quitSafely()
-                    thread = null
-                    workerHandler = null
+                    releaseResources(vd, rdr, proj)
+                    // Let already queued callbacks finish before quitting the looper.
+                    handler.post { workerThread.quitSafely() }
                 }
             }
         } else {
-            releaseResources()
-            thread?.quitSafely()
-            thread = null
-            workerHandler = null
+            releaseResources(vd, rdr, proj)
+            workerThread?.quitSafely()
         }
     }
 
-    private fun releaseResources() {
-        runCatching { virtualDisplay?.release() }
-        virtualDisplay = null
-        runCatching { reader?.close() }
-        reader = null
-        runCatching { projection?.stop() }
-        projection = null
-        reusablePadded?.recycle()
-        reusablePadded = null
+    private fun releaseResources(
+        vd: VirtualDisplay?,
+        rdr: ImageReader?,
+        proj: MediaProjection?,
+    ) {
+        runCatching { vd?.release() }
+        runCatching { rdr?.close() }
+        runCatching { proj?.stop() }
+        if (thread == null) {
+            reusablePadded?.recycle()
+            reusablePadded = null
+        }
     }
 
     private fun buildNotification(): Notification {

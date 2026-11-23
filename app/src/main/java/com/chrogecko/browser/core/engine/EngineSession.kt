@@ -333,6 +333,7 @@ class EngineSession(
             }
 
             override fun onPrintWithStatus(stream: InputStream): GeckoResult<Boolean> {
+                pendingPrintResult?.complete(false)
                 val result = GeckoResult<Boolean>()
                 pendingPrintResult = result
                 ioScope.launch {
@@ -340,16 +341,23 @@ class EngineSession(
                     if (file != null) printFiles.add(file)
                     mainHandler.post {
                         if (pendingPrintResult !== result) {
-                            // close() already completed the result; do not touch it again.
-                            file?.delete()
+                            // close() or a newer print job already completed the result; do not touch it again.
+                            if (file != null) {
+                                printFiles.remove(file)
+                                file.delete()
+                            }
                             return@post
                         }
                         pendingPrintResult = null
                         if (file != null && printHandler != null) {
+                            printFiles.remove(file)
                             printHandler?.invoke(file)
                             result.complete(true)
                         } else {
-                            file?.delete()
+                            if (file != null) {
+                                printFiles.remove(file)
+                                file.delete()
+                            }
                             result.complete(false)
                         }
                     }
@@ -452,13 +460,16 @@ class EngineSession(
                 MediaPlayback.release(id)
             }
 
+            private fun secondsToMillis(seconds: Double): Long =
+                if (seconds.isFinite() && seconds >= 0.0) (seconds * 1000.0).toLong() else 0L
+
             override fun onPositionState(
                 session: GeckoSession,
                 mediaSession: MediaSession,
                 state: MediaSession.PositionState,
             ) {
-                positionMs = (state.position * 1000).toLong()
-                durationMs = (state.duration * 1000).toLong()
+                positionMs = secondsToMillis(state.position)
+                durationMs = secondsToMillis(state.duration)
                 publish()
             }
 
@@ -503,7 +514,8 @@ class EngineSession(
     }
 
     fun clearSelection() {
-        selectionCache?.hide()
+        runCatching { selectionCache?.unselect() }
+        runCatching { selectionCache?.hide() }
         selectionCache = null
         _selection.value = null
     }
@@ -594,7 +606,7 @@ class EngineSession(
                 session: GeckoSession,
                 prompt: GeckoSession.PromptDelegate.PopupPrompt,
             ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse> {
-                popupHandler?.invoke(prompt.targetUri.orEmpty())
+                prompt.targetUri?.takeIf { it.isNotBlank() }?.let { popupHandler?.invoke(it) }
                 return GeckoResult.fromValue(prompt.dismiss())
             }
         }
@@ -764,7 +776,9 @@ class EngineSession(
         val response = when {
             prompt == null -> pending.prompt.dismiss()
             uris.isEmpty() -> prompt.dismiss()
-            else -> prompt.confirm(appContext, uris.toTypedArray())
+            else -> runCatching {
+                prompt.confirm(appContext, uris.toTypedArray())
+            }.getOrElse { prompt.dismiss() }
         }
         pending.result.complete(response)
     }

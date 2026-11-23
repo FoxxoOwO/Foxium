@@ -20,12 +20,20 @@ import com.chrogecko.browser.R
  * the adapter only copies bytes; Android offers getString(R.string.print_save_as_pdf) as one of the printers.
  */
 fun printPdf(context: Context, jobName: String, pdf: File) {
-    val manager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager ?: return
+    val manager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager
+    if (manager == null) {
+        runCatching { pdf.delete() }
+        return
+    }
     val attrs = PrintAttributes.Builder()
         .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
         .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
         .build()
-    manager.print(jobName.ifBlank { "Foxium" }, PdfPrintAdapter(pdf), attrs)
+    runCatching {
+        manager.print(jobName.ifBlank { "Foxium" }, PdfPrintAdapter(pdf), attrs)
+    }.onFailure {
+        runCatching { pdf.delete() }
+    }
 }
 
 private class PdfPrintAdapter(private val pdf: File) : PrintDocumentAdapter() {

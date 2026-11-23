@@ -86,7 +86,14 @@ class MainActivity : ComponentActivity() {
             val url by externalUrl.collectAsState()
             ChromeBrowserScreen(
                 externalUrl = url,
-                onExternalUrlConsumed = { externalUrl.value = null },
+                onExternalUrlConsumed = {
+                    externalUrl.value = null
+                    intent?.let { current ->
+                        if (current.data != null) {
+                            setIntent(Intent(current).setData(null))
+                        }
+                    }
+                },
             )
         }
     }

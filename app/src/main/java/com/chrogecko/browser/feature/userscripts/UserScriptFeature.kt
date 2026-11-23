@@ -112,15 +112,14 @@ class UserScriptFeature @Inject constructor(
         install(sourceFromUrl(url), sourceUrl = url)
 
     suspend fun sourceFromUri(uri: Uri): String = withContext(Dispatchers.IO) {
-        context.contentResolver.openInputStream(uri)?.use { stream ->
-            stream.bufferedReader().use { it.readText() }
-        } ?: throw UserScriptParseException("Cannot read the selected file")
+        context.contentResolver.openInputStream(uri)?.use(::readBoundedUtf8)
+            ?: throw UserScriptParseException("Cannot read the selected file")
     }
 
     suspend fun sourceFromUrl(url: String): String = withContext(Dispatchers.IO) {
         val parsedUrl = runCatching { java.net.URI(url) }.getOrNull()
             ?: throw UserScriptParseException("Invalid URL")
-        if (parsedUrl.scheme != "https") {
+        if (parsedUrl.scheme?.lowercase() != "https") {
             throw UserScriptParseException("Only https userscript URLs are supported")
         }
         fetch(url)
@@ -293,10 +292,12 @@ class UserScriptFeature @Inject constructor(
         if (scheme != "https") {
             throw UserScriptParseException("Only https userscript URLs are supported")
         }
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Foxium/${android.os.Build.VERSION.SDK_INT}")
-            .build()
+        val request = runCatching {
+            Request.Builder()
+                .url(url)
+                .header("User-Agent", "Foxium/${android.os.Build.VERSION.SDK_INT}")
+                .build()
+        }.getOrElse { throw UserScriptParseException("Invalid URL") }
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw UserScriptParseException("HTTP ${response.code} while downloading script")
@@ -305,22 +306,24 @@ class UserScriptFeature @Inject constructor(
             if (body.contentLength() > MAX_SCRIPT_BYTES) {
                 throw UserScriptParseException("Script is larger than 4 MB")
             }
-            val out = java.io.ByteArrayOutputStream()
-            body.byteStream().use { input ->
-                val buffer = ByteArray(16 * 1024)
-                var total = 0L
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    total += read
-                    if (total > MAX_SCRIPT_BYTES) {
-                        throw UserScriptParseException("Script is larger than 4 MB")
-                    }
-                    out.write(buffer, 0, read)
-                }
-            }
-            return out.toString(Charsets.UTF_8.name())
+            return body.byteStream().use(::readBoundedUtf8)
         }
+    }
+
+    private fun readBoundedUtf8(input: java.io.InputStream): String {
+        val out = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > MAX_SCRIPT_BYTES) {
+                throw UserScriptParseException("Script is larger than 4 MB")
+            }
+            out.write(buffer, 0, read)
+        }
+        return out.toString(Charsets.UTF_8.name())
     }
 
     private fun ParsedUserScript.toEntity(

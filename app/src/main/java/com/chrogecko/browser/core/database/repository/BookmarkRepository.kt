@@ -62,12 +62,15 @@ class BookmarkRepository @Inject constructor(
 
     suspend fun moveFolder(id: Long, parentId: Long?) {
         if (id == parentId) return
-        var ancestorId = parentId
-        while (ancestorId != null) {
-            if (ancestorId == id) return
-            ancestorId = folderDao.findById(ancestorId)?.parentId
+        database.withTransaction {
+            var ancestorId = parentId
+            val visited = HashSet<Long>()
+            while (ancestorId != null) {
+                if (ancestorId == id || !visited.add(ancestorId)) return@withTransaction
+                ancestorId = folderDao.findById(ancestorId)?.parentId
+            }
+            folderDao.move(id, parentId)
         }
-        folderDao.move(id, parentId)
     }
 
     /** Exports all bookmarks and folders in Netscape Bookmark HTML format. */
