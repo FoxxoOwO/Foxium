@@ -155,7 +155,6 @@ internal object RssFeedParser {
 
     private fun decodeEntities(input: String): String {
         var text = input
-            .replace("&amp;", "&")
             .replace("&lt;", "<")
             .replace("&gt;", ">")
             .replace("&quot;", "\"")
@@ -172,7 +171,7 @@ internal object RssFeedParser {
                 match.value
             }
         }
-        return text
+        return text.replace("&amp;", "&")
     }
 
     private fun DocumentBuilderFactory.setSecureFeature(name: String, value: Boolean) {

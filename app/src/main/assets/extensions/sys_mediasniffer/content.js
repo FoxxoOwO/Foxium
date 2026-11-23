@@ -6,6 +6,17 @@
  * manifests loaded by player scripts, or URLs hidden behind redirects).
  */
 (() => {
+  const SKIP_SUBTREE_TAGS = new Set([
+    "SVG",
+    "SCRIPT",
+    "STYLE",
+    "NOSCRIPT",
+    "TEMPLATE",
+    "TEXTAREA",
+    "SELECT",
+    "PRE",
+    "CODE",
+  ]);
   const seen = new Set();
   let scheduled = false;
   let observer = null;
@@ -109,7 +120,14 @@
         if (!node || node.nodeType !== 1) continue;
         const tag = node.tagName;
         if (tag === "VIDEO" || tag === "AUDIO" || tag === "SOURCE") return true;
-        if (node.querySelector && node.querySelector("video, audio")) return true;
+        if (!node.childElementCount || SKIP_SUBTREE_TAGS.has(tag)) continue;
+        if (
+          node.getElementsByTagName &&
+          (node.getElementsByTagName("video").length > 0 ||
+            node.getElementsByTagName("audio").length > 0)
+        ) {
+          return true;
+        }
       }
     }
     return false;
@@ -119,6 +137,7 @@
     schedule();
     if (document.documentElement && !observer) {
       observer = new MutationObserver((mutations) => {
+        if (scheduled) return;
         if (hasMediaNode(mutations)) schedule();
       });
       observer.observe(document.documentElement, { childList: true, subtree: true });
@@ -131,7 +150,7 @@
     start();
   }
   window.addEventListener("load", schedule, { once: true });
-  // Media players often mount after first paint and on user interaction.
-  document.addEventListener("click", schedule, true);
-  document.addEventListener("play", schedule, true);
+  // Listen to passive media lifecycle events instead of every click on the page.
+  document.addEventListener("loadedmetadata", schedule, { capture: true, passive: true });
+  document.addEventListener("play", schedule, { capture: true, passive: true });
 })();

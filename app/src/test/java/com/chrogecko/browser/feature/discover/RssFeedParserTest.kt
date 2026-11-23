@@ -91,4 +91,23 @@ class RssFeedParserTest {
     fun malformedXmlReturnsEmptyList() {
         assertEquals(emptyList<DiscoverItem>(), RssFeedParser.parse("<rss><broken", "https://example.com/feed.xml"))
     }
+
+    @Test
+    fun doesNotDoubleDecodeAmpersandEntities() {
+        val xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0">
+              <channel>
+                <item>
+                  <title><![CDATA[Literal &amp;quot;Token&amp;#39;s End]]></title>
+                  <link>https://example.org/articles/entities</link>
+                </item>
+              </channel>
+            </rss>
+        """.trimIndent()
+
+        val items = RssFeedParser.parse(xml, "https://example.org/feed.xml")
+        assertEquals(1, items.size)
+        assertEquals("Literal &quot;Token&#39;s End", items[0].title)
+    }
 }

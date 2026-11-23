@@ -15,7 +15,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -80,6 +79,12 @@ class FaviconRepository @Inject constructor(
     private val _icons = MutableStateFlow<Map<String, ImageBitmap>>(emptyMap())
     val icons: StateFlow<Map<String, ImageBitmap>> = _icons.asStateFlow()
 
+    private val memoryLock = Any()
+    private val memoryCache = object : LinkedHashMap<String, ImageBitmap>(MAX_MEMORY_ICONS, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap>?): Boolean =
+            size > MAX_MEMORY_ICONS
+    }
+
     private val failedHosts = ConcurrentHashMap<String, Long>()
 
     init {
@@ -91,7 +96,8 @@ class FaviconRepository @Inject constructor(
     /** Fetches the icon for [pageUrl]'s host unless it is already cached or being fetched. */
     fun ensure(pageUrl: String) {
         val host = faviconHost(pageUrl) ?: return
-        if (_icons.value.containsKey(host)) return
+        val cachedHit = synchronized(memoryLock) { memoryCache.containsKey(host) }
+        if (cachedHit) return
         val failedAt = failedHosts[host]
         if (failedAt != null && System.currentTimeMillis() - failedAt < NEGATIVE_TTL_MS) return
         synchronized(inFlight) { if (!inFlight.add(host)) return }
@@ -104,15 +110,44 @@ class FaviconRepository @Inject constructor(
         }
     }
 
+    private fun publishIcon(host: String, bitmap: ImageBitmap) {
+        val snapshot = synchronized(memoryLock) {
+            memoryCache[host] = bitmap
+            LinkedHashMap(memoryCache)
+        }
+        _icons.value = snapshot
+    }
+
+    private fun publishAll(entries: Map<String, ImageBitmap>) {
+        if (entries.isEmpty()) return
+        val snapshot = synchronized(memoryLock) {
+            for ((host, bitmap) in entries) {
+                memoryCache.putIfAbsent(host, bitmap)
+            }
+            LinkedHashMap(memoryCache)
+        }
+        _icons.value = snapshot
+    }
+
     private suspend fun loadCached() {
-        val cached = runCatching { dao.all() }.getOrDefault(emptyList())
-        val decoded = cached.mapNotNull { entity ->
-            decode(entity.bytes)?.let { entity.host to it }
-        }.toMap()
-        if (decoded.isNotEmpty()) _icons.update { decoded + it }
+        val cached = runCatching { dao.recent(STARTUP_PRELOAD_LIMIT) }.getOrDefault(emptyList())
+        val decoded = LinkedHashMap<String, ImageBitmap>(cached.size)
+        for (entity in cached) {
+            val bitmap = decode(entity.bytes) ?: continue
+            decoded[entity.host] = bitmap
+        }
+        publishAll(decoded)
     }
 
     private suspend fun fetch(host: String) {
+        val cached = runCatching { dao.findByHost(host) }.getOrNull()
+        if (cached != null) {
+            val decoded = decode(cached.bytes)
+            if (decoded != null) {
+                publishIcon(host, decoded)
+                return
+            }
+        }
         // HTTPS only: a plaintext favicon request announces every visited host to the network.
         val root = "https://$host/"
         val declared = runCatching { declaredIcons(root) }.getOrDefault(emptyList())
@@ -127,7 +162,7 @@ class FaviconRepository @Inject constructor(
                 dao.trim()
             }
             failedHosts.remove(host)
-            _icons.update { it + (host to bitmap) }
+            publishIcon(host, bitmap)
             return
         }
         failedHosts[host] = System.currentTimeMillis()
@@ -196,5 +231,7 @@ class FaviconRepository @Inject constructor(
         private const val MAX_ICON_HTML = 128 * 1024
         private const val MAX_ICON_PX = 96
         private const val NEGATIVE_TTL_MS = 15L * 60L * 1000L
+        private const val STARTUP_PRELOAD_LIMIT = 80
+        private const val MAX_MEMORY_ICONS = 120
     }
 }

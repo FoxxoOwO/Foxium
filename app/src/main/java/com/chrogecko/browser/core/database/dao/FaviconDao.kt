@@ -12,6 +12,12 @@ interface FaviconDao {
     @Query("SELECT * FROM favicons")
     suspend fun all(): List<FaviconEntity>
 
+    @Query("SELECT * FROM favicons ORDER BY fetchedAt DESC LIMIT :limit")
+    suspend fun recent(limit: Int): List<FaviconEntity>
+
+    @Query("SELECT * FROM favicons WHERE host = :host LIMIT 1")
+    suspend fun findByHost(host: String): FaviconEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(entity: FaviconEntity)
 

@@ -119,13 +119,7 @@ class MediaPlaybackService : Service() {
                 durationMs = 0L,
             ),
         )
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            notification,
-            foregroundType(),
-        )
-        foreground = true
+        enterForeground(notification)
     }
 
     private fun present(state: NowPlaying) {
@@ -149,16 +143,29 @@ class MediaPlaybackService : Service() {
         )
         val notification = buildNotification(state)
         if (foreground) {
-            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
+            runCatching {
+                getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification)
+            }
         } else {
+            enterForeground(notification)
+        }
+    }
+
+    private fun enterForeground(notification: Notification): Boolean {
+        val started = runCatching {
             ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
                 notification,
                 foregroundType(),
             )
+        }.isSuccess
+        if (started) {
             foreground = true
+        } else {
+            stopSelf()
         }
+        return started
     }
 
     private fun foregroundType(): Int =

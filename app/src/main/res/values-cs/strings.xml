@@ -587,4 +587,8 @@
     <string name="update_install">Nainstalovat</string>
     <string name="update_allow_and_install">Povolit a nainstalovat</string>
     <string name="update_later">Později</string>
+    <string name="update_in_background">Na pozadí</string>
+    <string name="update_notification_downloading">Stahování Foxium v%1$s</string>
+    <string name="update_notification_ready_title">Foxium v%1$s je připraveno k instalaci</string>
+    <string name="update_notification_ready_text">Klepnutím nainstalujete aktualizaci</string>
 </resources>

@@ -25,11 +25,12 @@ object DownloadStorage {
     )
 
     fun create(context: Context, fileName: String, mime: String, location: String): Target {
+        val safeName = sanitizeFileName(fileName)
         if (location == PUBLIC_DOWNLOADS && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             var inserted: android.net.Uri? = null
             runCatching {
                 val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.DISPLAY_NAME, safeName)
                     put(MediaStore.Downloads.MIME_TYPE, mime.ifBlank { "application/octet-stream" })
                     put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
                     put(MediaStore.Downloads.IS_PENDING, 1)
@@ -62,10 +63,11 @@ object DownloadStorage {
                 }
             }
         }
-        return fileTarget(context, fileName)
+        return fileTarget(context, safeName)
     }
 
     private fun fileTarget(context: Context, fileName: String): Target {
+        val safeName = sanitizeFileName(fileName)
         val directory = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         } else {
@@ -73,22 +75,33 @@ object DownloadStorage {
                 ?: File(context.filesDir, "downloads")
         }
         directory.mkdirs()
-        val base = fileName.substringBeforeLast('.', fileName)
-        val extension = fileName.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }
+        val base = safeName.substringBeforeLast('.', safeName)
+        val extension = safeName.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }
         val file = synchronized(this) {
-            var candidate = File(directory, fileName)
-            var index = 1
-            while (candidate.exists()) {
-                candidate = File(directory, "$base ($index)$extension")
-                index++
+            var reserved: File? = null
+            for (index in 0..999) {
+                val candidate = File(directory, if (index == 0) safeName else "$base ($index)$extension")
+                if (runCatching { candidate.createNewFile() }.getOrDefault(false)) {
+                    reserved = candidate
+                    break
+                }
             }
-            candidate
+            reserved ?: File(directory, safeName)
         }
         return Target(
             path = file.absolutePath,
             output = file.outputStream(),
             finish = {},
         )
+    }
+
+    private fun sanitizeFileName(raw: String): String {
+        val leaf = raw.substringAfterLast('/').substringAfterLast('\\')
+        val clean = leaf
+            .replace(Regex("[\\u0000-\\u001F\\u007F]"), "")
+            .trim()
+            .trimStart('.')
+        return if (clean.isEmpty() || clean == "." || clean == "..") "download" else clean
     }
 
     fun uriFor(context: Context, path: String): Uri =

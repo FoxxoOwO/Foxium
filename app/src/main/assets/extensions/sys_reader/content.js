@@ -65,7 +65,7 @@ function parseArticle() {
 }
 
 const SANITIZE_DROP_TAGS =
-  "script, style, iframe, frame, frameset, object, embed, applet, form, input, button, select, textarea, meta, link, base, noscript, template";
+  "script, style, iframe, frame, frameset, object, embed, applet, form, input, button, select, textarea, meta, link, base, noscript, template, foreignobject, animate, set";
 const SANITIZE_URI_ATTRS = new Set([
   "href",
   "src",
@@ -85,6 +85,15 @@ function isUnsafeUri(value) {
   );
 }
 
+function hasUnsafeSrcset(value) {
+  const candidates = String(value || "").split(",");
+  for (const rawCandidate of candidates) {
+    const urlPart = rawCandidate.trim().split(/\s+/)[0];
+    if (isUnsafeUri(urlPart)) return true;
+  }
+  return false;
+}
+
 function sanitizeHtml(rawHtml, doc) {
   const fragment = doc.createDocumentFragment();
   if (!rawHtml) return fragment;
@@ -99,6 +108,8 @@ function sanitizeHtml(rawHtml, doc) {
       if (name.startsWith("on") || name === "srcdoc") {
         element.removeAttribute(attr.name);
       } else if (SANITIZE_URI_ATTRS.has(name) && isUnsafeUri(attr.value)) {
+        element.removeAttribute(attr.name);
+      } else if (name === "srcset" && hasUnsafeSrcset(attr.value)) {
         element.removeAttribute(attr.name);
       }
     }
@@ -141,7 +152,7 @@ function ensureStyle(doc) {
 }
 
 function render(parsed) {
-  if (!document.body) return false;
+  if (active || !document.body) return active;
   ensureStyle(document);
   savedNodes = Array.from(document.body.childNodes);
   savedScroll = window.scrollY || 0;

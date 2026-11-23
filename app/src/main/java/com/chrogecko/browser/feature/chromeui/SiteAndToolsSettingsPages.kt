@@ -745,6 +745,9 @@ internal fun AboutSettingsPage(
                                     Button(enabled = false, onClick = {}) {
                                         Text(stringResource(R.string.update_downloading))
                                     }
+                                    TextButton(onClick = viewModel::cancelUpdateDownload) {
+                                        Text(stringResource(R.string.cancel))
+                                    }
                                 }
                                 is UpdateState.ReadyToInstall -> {
                                     Button(onClick = viewModel::installReadyUpdate) {

@@ -69,7 +69,9 @@ class ChroGeckoApplication : Application() {
         darkMode.get().start()
         textExpander.get().start()
         readerMode.get().start()
-        cast.get().start()
+        applicationScope.launch(Dispatchers.Default) {
+            cast.get().start()
+        }
         applicationScope.launch {
             preferences.get().preferredColorScheme.collectLatest(chroGeckoRuntime::applyColorScheme)
         }

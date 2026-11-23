@@ -49,7 +49,11 @@ class ReaderModeFeature @Inject constructor(
         if (!started.compareAndSet(false, true)) return
         scope.launch {
             siteRules.rules.collect { rules ->
-                autoHosts = rules.filter { it.readerMode }.map { it.host }.toSet()
+                autoHosts = rules
+                    .filter { it.readerMode }
+                    .map { it.host.trim().lowercase().removePrefix("www.") }
+                    .filter { it.isNotEmpty() }
+                    .toSet()
             }
         }
         scope.launch {
@@ -77,7 +81,7 @@ class ReaderModeFeature @Inject constructor(
                     }
                     next
                 }
-                val host = payload.optString("host")
+                val host = payload.optString("host").trim().lowercase().removePrefix("www.")
                 if (available && !active && host.isNotBlank() && host in autoHosts) {
                     post("reader/activate", payload.optInt("tabId", -1))
                 }

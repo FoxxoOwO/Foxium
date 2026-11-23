@@ -48,7 +48,7 @@ import com.chrogecko.browser.core.database.entity.UserscriptEntity
         AddressEntity::class,
         CardEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

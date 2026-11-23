@@ -1,5 +1,6 @@
 package com.chrogecko.browser.feature.chromeui
 
+import android.view.View
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -10,12 +11,12 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.res.stringResource
 import com.chrogecko.browser.R
 import kotlin.math.abs
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -79,10 +80,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onLayoutRectChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -136,6 +137,8 @@ fun ChromeTabGridSwitcher(
     // Long press without moving opens the card menu, like Chrome; dragging reorders.
     var menuTab by remember { mutableStateOf<BrowserTab?>(null) }
     var groupPick by remember { mutableStateOf(false) }
+    val hapticView = LocalView.current
+    val cardScope = rememberCoroutineScope()
 
     ChroGeckoTheme(darkTheme = isSystemInDarkTheme() || showPrivate, isPrivate = showPrivate) {
         Surface(
@@ -227,6 +230,8 @@ fun ChromeTabGridSwitcher(
                                         tab = tab,
                                         group = group,
                                         icon = faviconHost(tab.state.url)?.let(icons::get),
+                                        hapticView = hapticView,
+                                        scope = cardScope,
                                         isActive = tab.id == activeTabId,
                                         isDragging = tab.id == dragId,
                                         isDropTarget = tab.id == hoverId,
@@ -382,6 +387,8 @@ private fun TabCard(
     isDragging: Boolean,
     isDropTarget: Boolean,
     icon: ImageBitmap?,
+    hapticView: View,
+    scope: CoroutineScope,
     onClick: () -> Unit,
     onClose: () -> Unit,
     onBoundsChanged: (Rect) -> Unit,
@@ -392,13 +399,11 @@ private fun TabCard(
     onDragCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scope = rememberCoroutineScope()
-    val hapticView = LocalView.current
     val swipeX = remember(tab.id) { Animatable(0f) }
     var dismissed by remember(tab.id) { mutableStateOf(false) }
     var gesture by remember(tab.id) { mutableStateOf(CardGesture.NONE) }
     var reorderAborted by remember(tab.id) { mutableStateOf(false) }
-    var cardWidthPx by remember { mutableFloatStateOf(1f) }
+    val cardWidthRef = remember(tab.id) { floatArrayOf(1f) }
     val currentOnClose by rememberUpdatedState(onClose)
     val settleSpec = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     val currentOnDragStart by rememberUpdatedState(onDragStart)
@@ -420,9 +425,19 @@ private fun TabCard(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(0.75f)
-            .onGloballyPositioned {
-                onBoundsChanged(it.boundsInWindow())
-                cardWidthPx = it.size.width.toFloat().coerceAtLeast(1f)
+            .onSizeChanged { size ->
+                cardWidthRef[0] = size.width.toFloat().coerceAtLeast(1f)
+            }
+            .onLayoutRectChanged(throttleMillis = 64L) { bounds ->
+                val windowRect = bounds.boundsInWindow
+                onBoundsChanged(
+                    Rect(
+                        left = windowRect.left.toFloat(),
+                        top = windowRect.top.toFloat(),
+                        right = windowRect.right.toFloat(),
+                        bottom = windowRect.bottom.toFloat(),
+                    ),
+                )
             }
             .pointerInput(tab.id) {
                 detectDragGesturesAfterLongPress(
@@ -464,6 +479,7 @@ private fun TabCard(
                         if (gesture != CardGesture.REORDER) gesture = CardGesture.SWIPE
                     },
                     onDragEnd = {
+                        val cardWidthPx = cardWidthRef[0]
                         val velocityX = velocityTracker.calculateVelocity().x
                         val offset = swipeX.value
                         val flung = abs(velocityX) > 600f && offset * velocityX > 0f
@@ -508,6 +524,7 @@ private fun TabCard(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {
+                val cardWidthPx = cardWidthRef[0]
                 translationX = swipeX.value
                 rotationZ = (swipeX.value / cardWidthPx).coerceIn(-1f, 1f) * 8f
                 alpha = if (isDragging) {

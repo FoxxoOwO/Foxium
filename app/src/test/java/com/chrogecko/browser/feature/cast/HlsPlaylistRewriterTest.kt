@@ -47,4 +47,18 @@ class HlsPlaylistRewriterTest {
         assertTrue(rewritten.contains("URI=\"data:text/plain;base64,AAAA\""))
         assertEquals(4, rewritten.lines().count { it.startsWith("#EXT") })
     }
+
+    @Test
+    fun `handles uppercase schemes without proxying DATA urls`() {
+        val manifest = """
+            #EXTM3U
+            #EXT-X-MAP:URI="DATA:text/plain;base64,AAAA"
+            HTTPS://CDN.EXAMPLE.COM/seg.ts
+        """.trimIndent()
+
+        val rewritten = HlsPlaylistRewriter.rewrite(manifest, "https://cdn.example.com/hls/master.m3u8", proxyBuilder)
+
+        assertTrue(rewritten.contains("URI=\"DATA:text/plain;base64,AAAA\""))
+        assertTrue(rewritten.contains("$proxy?u=HTTPS%3A%2F%2FCDN.EXAMPLE.COM%2Fseg.ts"))
+    }
 }

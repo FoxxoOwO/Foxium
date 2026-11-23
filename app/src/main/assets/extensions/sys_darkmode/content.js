@@ -17,6 +17,8 @@
 (() => {
   const STYLE_ID = "chrogecko-dark";
   const MAX_ELEMENTS = 6000;
+  const MAX_COLOR_CACHE = 512;
+  const BORDER_SIDES = ["top", "right", "bottom", "left"];
   const SKIP_TAGS = new Set([
     "SCRIPT",
     "STYLE",
@@ -67,6 +69,34 @@ input, textarea, select, button {
   let pendingNodes = [];
   let touched = [];
   let originals = new WeakMap();
+  let idleHandle = null;
+  const parsedColorCache = new Map();
+  const bgTransformCache = new Map();
+  const fgTransformCache = new Map();
+  const borderDarkenCache = new Map();
+
+  function cacheSet(map, key, value) {
+    if (map.size >= MAX_COLOR_CACHE) map.clear();
+    map.set(key, value);
+    return value;
+  }
+
+  function scheduleIdle(fn) {
+    if (typeof requestIdleCallback === "function") {
+      return requestIdleCallback(fn, { timeout: 120 });
+    }
+    return setTimeout(fn, 0);
+  }
+
+  function clearIdle() {
+    if (idleHandle === null) return;
+    if (typeof cancelIdleCallback === "function") {
+      cancelIdleCallback(idleHandle);
+    } else {
+      clearTimeout(idleHandle);
+    }
+    idleHandle = null;
+  }
 
   function normalizeConfig(raw) {
     const rules = {};
@@ -110,19 +140,22 @@ input, textarea, select, button {
 
   function parseColor(value) {
     if (!value) return null;
+    if (parsedColorCache.has(value)) return parsedColorCache.get(value);
     const match = /rgba?\(([^)]+)\)/i.exec(value);
-    if (!match) return null;
+    if (!match) return cacheSet(parsedColorCache, value, null);
     const parts = match[1]
       .split(/[,/\s]+/)
       .filter((part) => part.length > 0)
       .map(Number);
-    if (parts.length < 3 || parts.some((part) => Number.isNaN(part))) return null;
-    return {
+    if (parts.length < 3 || parts.some((part) => Number.isNaN(part))) {
+      return cacheSet(parsedColorCache, value, null);
+    }
+    return cacheSet(parsedColorCache, value, {
       r: parts[0],
       g: parts[1],
       b: parts[2],
       a: parts.length > 3 ? parts[3] : 1,
-    };
+    });
   }
 
   function luminance(color) {
@@ -166,6 +199,35 @@ input, textarea, select, button {
     return lum > 0.82 ? "#121212" : "#1e1e1e";
   }
 
+  function resolveBackgroundOverride(rawColor) {
+    if (!rawColor) return "";
+    if (bgTransformCache.has(rawColor)) return bgTransformCache.get(rawColor);
+    const color = parseColor(rawColor);
+    if (!color || color.a <= 0.05) return cacheSet(bgTransformCache, rawColor, "");
+    const lum = luminance(color);
+    if (lum <= 0.5) return cacheSet(bgTransformCache, rawColor, "");
+    return cacheSet(bgTransformCache, rawColor, darkVariant(color, lum));
+  }
+
+  function resolveForegroundOverride(rawColor) {
+    if (!rawColor) return "";
+    if (fgTransformCache.has(rawColor)) return fgTransformCache.get(rawColor);
+    const color = parseColor(rawColor);
+    if (!color || color.a <= 0.05) return cacheSet(fgTransformCache, rawColor, "");
+    const lum = luminance(color);
+    if (lum >= 0.5) return cacheSet(fgTransformCache, rawColor, "");
+    const mapped = saturation(color) < 0.35 ? "#e0e0e0" : lighten(color, 0.62);
+    return cacheSet(fgTransformCache, rawColor, mapped);
+  }
+
+  function shouldDarkenBorder(rawColor) {
+    if (!rawColor) return false;
+    if (borderDarkenCache.has(rawColor)) return borderDarkenCache.get(rawColor);
+    const color = parseColor(rawColor);
+    const darken = Boolean(color && color.a > 0.05 && luminance(color) > 0.6);
+    return cacheSet(borderDarkenCache, rawColor, darken);
+  }
+
   function appendStyle(css) {
     const existing = document.getElementById(STYLE_ID);
     if (existing) existing.remove();
@@ -194,6 +256,7 @@ input, textarea, select, button {
 
   function teardown() {
     generation += 1;
+    clearIdle();
     if (observer) {
       observer.disconnect();
       observer = null;
@@ -242,30 +305,18 @@ input, textarea, select, button {
     }
 
     const updates = [];
-    const background = parseColor(computed.backgroundColor);
-    if (background && background.a > 0.05) {
-      const lum = luminance(background);
-      if (lum > 0.5) updates.push(["background-color", darkVariant(background, lum)]);
-    }
+    const backgroundOverride = resolveBackgroundOverride(computed.backgroundColor);
+    if (backgroundOverride) updates.push(["background-color", backgroundOverride]);
 
-    const foreground = parseColor(computed.color);
-    if (foreground && foreground.a > 0.05) {
-      const lum = luminance(foreground);
-      if (lum < 0.5) {
-        updates.push([
-          "color",
-          saturation(foreground) < 0.35 ? "#e0e0e0" : lighten(foreground, 0.62),
-        ]);
-      }
-    }
+    const foregroundOverride = resolveForegroundOverride(computed.color);
+    if (foregroundOverride) updates.push(["color", foregroundOverride]);
 
-    for (const side of ["top", "right", "bottom", "left"]) {
+    for (const side of BORDER_SIDES) {
       const borderStyle = computed.getPropertyValue("border-" + side + "-style");
       if (!borderStyle || borderStyle === "none" || borderStyle === "hidden") continue;
       const width = parseFloat(computed.getPropertyValue("border-" + side + "-width"));
       if (!Number.isFinite(width) || width <= 0) continue;
-      const color = parseColor(computed.getPropertyValue("border-" + side + "-color"));
-      if (!color || color.a <= 0.05 || luminance(color) <= 0.6) continue;
+      if (!shouldDarkenBorder(computed.getPropertyValue("border-" + side + "-color"))) continue;
       updates.push(["border-" + side + "-color", "#3c4043"]);
     }
 
@@ -289,6 +340,7 @@ input, textarea, select, button {
 
     let index = 0;
     const step = () => {
+      idleHandle = null;
       if (gen !== generation || mode !== "dynamic") return;
       const end = Math.min(index + 150, elements.length);
       const batch = [];
@@ -299,7 +351,7 @@ input, textarea, select, button {
       }
       applyOverridesBatch(batch);
       if (index < elements.length && touched.length < MAX_ELEMENTS) {
-        setTimeout(step, 0);
+        idleHandle = scheduleIdle(step);
       } else {
         report(false);
       }

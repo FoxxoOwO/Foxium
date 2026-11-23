@@ -24,7 +24,12 @@ function matchPattern(pattern, url) {
     return false;
   }
   const scheme = parsed[1].toLowerCase();
-  if (scheme !== "*" && scheme !== target.protocol.slice(0, -1)) return false;
+  const protocol = target.protocol.slice(0, -1).toLowerCase();
+  if (scheme === "*") {
+    if (protocol !== "http" && protocol !== "https") return false;
+  } else if (scheme !== protocol) {
+    return false;
+  }
 
   const host = parsed[2].toLowerCase();
   if (host !== "*") {

@@ -2,10 +2,7 @@ package com.chrogecko.browser.core.engine
 
 import android.view.View
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import org.mozilla.geckoview.GeckoSession
@@ -22,7 +19,7 @@ fun GeckoEngineView(
     modifier: Modifier = Modifier,
     androidAutofillEnabled: Boolean = true,
 ) {
-    var boundSession by remember { mutableStateOf<EngineSession?>(null) }
+    val boundSession = remember { arrayOfNulls<EngineSession>(1) }
     val importantForAutofillMode = if (androidAutofillEnabled) {
         View.IMPORTANT_FOR_AUTOFILL_YES
     } else {
@@ -37,7 +34,7 @@ fun GeckoEngineView(
                 session.releaseDisplay()
                 setSession(session.geckoSession)
                 session.attachView(this)
-                boundSession = session
+                boundSession[0] = session
             }
         },
         update = { view ->
@@ -45,17 +42,17 @@ fun GeckoEngineView(
                 view.importantForAutofill = importantForAutofillMode
             }
             if (view.session !== session.geckoSession) {
-                boundSession?.detachView(view)
-                view.releaseSession()
+                boundSession[0]?.detachView(view)
+                runCatching { view.releaseSession() }
                 session.releaseDisplay()
                 view.setSession(session.geckoSession)
             }
             session.attachView(view)
-            boundSession = session
+            boundSession[0] = session
         },
         onRelease = { view ->
-            boundSession?.detachView(view)
-            boundSession = null
+            boundSession[0]?.detachView(view)
+            boundSession[0] = null
             runCatching { view.releaseSession() }
         },
     )

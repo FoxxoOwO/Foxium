@@ -21,6 +21,10 @@ assert.equal(matchPattern("*://*.example.com/*", "https://notexample.com/x"), fa
 assert.equal(matchPattern("https://example.com/foo/*", "https://example.com/foo/bar"), true);
 assert.equal(matchPattern("https://example.com/foo/*", "https://example.com/foo"), false);
 assert.equal(matchPattern("file:///*", "file:///tmp/a.html"), true);
+assert.equal(matchPattern("*://example.com/*", "https://example.com/a"), true);
+assert.equal(matchPattern("*://example.com/*", "http://example.com/a"), true);
+assert.equal(matchPattern("*://example.com/*", "ftp://example.com/a"), false);
+assert.equal(matchPattern("*:///*", "file:///tmp/a.html"), false);
 assert.equal(matchPattern("https://example.com/*", "not a url"), false);
 
 assert.equal(includeMatches("https://example.com/*", "https://example.com/a?b=1"), true);

@@ -131,9 +131,9 @@ fun ChromeBrowserScreen(
     externalUrl: String? = null,
     onExternalUrlConsumed: () -> Unit = {},
 ) {
-    val activeTab by viewModel.activeTab.collectAsStateWithLifecycle()
+    val activeTabIsPrivate by viewModel.activeTabIsPrivate.collectAsStateWithLifecycle()
     var settingsOpen by remember { mutableStateOf(false) }
-    val isPrivate = activeTab?.isPrivate == true && !settingsOpen
+    val isPrivate = activeTabIsPrivate && !settingsOpen
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val baseConfig = LocalConfiguration.current
     val baseContext = LocalContext.current
@@ -273,9 +273,11 @@ private fun ChromeBrowserContent(
             type = "text/plain"
             putExtra(android.content.Intent.EXTRA_TEXT, text)
         }
-        context.startActivity(
-            android.content.Intent.createChooser(intent, resources.getString(R.string.share_text)),
-        )
+        runCatching {
+            context.startActivity(
+                android.content.Intent.createChooser(intent, resources.getString(R.string.share_text)),
+            )
+        }
     }
 
     val runtimePermissionLauncher = rememberLauncherForActivityResult(
@@ -390,7 +392,9 @@ private fun ChromeBrowserContent(
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, url)
             }
-            context.startActivity(Intent.createChooser(intent, resources.getString(R.string.share_page)))
+            runCatching {
+                context.startActivity(Intent.createChooser(intent, resources.getString(R.string.share_page)))
+            }
         }
     }
 
@@ -518,26 +522,10 @@ private fun ChromeBrowserContent(
                     bottom = if (bottomToolbarVisible) TOOLBAR_HEIGHT else 0.dp,
                 ),
         ) {
-            val progress = activeTab?.state?.progress ?: 0
-            val isPageLoading = !fullscreen && activeTab?.state?.isLoading == true
-            val animatedProgress by animateFloatAsState(
-                targetValue = (progress / 100f).coerceIn(0.05f, 1f),
-                animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
-                label = "pageProgress",
+            PageLoadingBar(
+                progress = activeTab?.state?.progress ?: 0,
+                visible = !fullscreen && activeTab?.state?.isLoading == true,
             )
-            AnimatedVisibility(
-                visible = isPageLoading,
-                enter = expandVertically(MaterialTheme.motionScheme.fastEffectsSpec()) + fadeIn(),
-                exit = shrinkVertically(MaterialTheme.motionScheme.fastEffectsSpec()) + fadeOut(),
-            ) {
-                LinearWavyProgressIndicator(
-                    progress = { animatedProgress },
-                    modifier = Modifier.fillMaxWidth().height(4.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = Color.Transparent,
-                    wavelength = 24.dp,
-                )
-            }
             AnimatedVisibility(
                 visible = find.visible && !fullscreen,
                 enter = expandVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeIn(),
@@ -839,9 +827,11 @@ private fun ChromeBrowserContent(
                         type = "text/plain"
                         putExtra(android.content.Intent.EXTRA_TEXT, url)
                     }
-                    context.startActivity(
-                        android.content.Intent.createChooser(intent, resources.getString(R.string.share_link)),
-                    )
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent.createChooser(intent, resources.getString(R.string.share_link)),
+                        )
+                    }
                 },
                 onDismiss = viewModel::dismissContextMenu,
             )
@@ -873,23 +863,31 @@ private fun ChromeBrowserContent(
                     readyToInstall = null,
                     onDownload = { viewModel.downloadAvailableUpdate(upd.update) },
                     onInstall = {},
+                    onHideToBackground = {},
+                    onCancelDownload = {},
                     onDismiss = { viewModel.dismissUpdateBanner(upd.update.tagName) },
                 )
             }
-            is UpdateState.Downloading -> AppUpdateDialog(
-                update = upd.update,
-                downloading = upd,
-                readyToInstall = null,
-                onDownload = {},
-                onInstall = {},
-                onDismiss = {},
-            )
+            is UpdateState.Downloading -> if (!upd.backgrounded) {
+                AppUpdateDialog(
+                    update = upd.update,
+                    downloading = upd,
+                    readyToInstall = null,
+                    onDownload = {},
+                    onInstall = {},
+                    onHideToBackground = viewModel::hideUpdateDownloadToBackground,
+                    onCancelDownload = viewModel::cancelUpdateDownload,
+                    onDismiss = viewModel::hideUpdateDownloadToBackground,
+                )
+            }
             is UpdateState.ReadyToInstall -> AppUpdateDialog(
                 update = upd.update,
                 downloading = null,
                 readyToInstall = upd,
                 onDownload = {},
                 onInstall = viewModel::installReadyUpdate,
+                onHideToBackground = {},
+                onCancelDownload = {},
                 onDismiss = { viewModel.dismissUpdateBanner(upd.update.tagName) },
             )
             else -> Unit
@@ -1222,6 +1220,32 @@ private fun pinToHomeScreen(context: Context, url: String, title: String) {
     ShortcutManagerCompat.requestPinShortcut(context, shortcut, null)
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun PageLoadingBar(
+    progress: Int,
+    visible: Boolean,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically(MaterialTheme.motionScheme.fastEffectsSpec()) + fadeIn(),
+        exit = shrinkVertically(MaterialTheme.motionScheme.fastEffectsSpec()) + fadeOut(),
+    ) {
+        val animatedProgress = animateFloatAsState(
+            targetValue = (progress / 100f).coerceIn(0.05f, 1f),
+            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+            label = "pageProgress",
+        )
+        LinearWavyProgressIndicator(
+            progress = { animatedProgress.value },
+            modifier = Modifier.fillMaxWidth().height(4.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = Color.Transparent,
+            wavelength = 24.dp,
+        )
+    }
+}
+
 @Composable
 private fun AppUpdateDialog(
     update: AvailableUpdate,
@@ -1229,6 +1253,8 @@ private fun AppUpdateDialog(
     readyToInstall: UpdateState.ReadyToInstall?,
     onDownload: () -> Unit,
     onInstall: () -> Unit,
+    onHideToBackground: () -> Unit,
+    onCancelDownload: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1238,7 +1264,7 @@ private fun AppUpdateDialog(
         stringResource(R.string.update_dialog_title, update.versionName)
     }
     AlertDialog(
-        onDismissRequest = { if (downloading == null) onDismiss() },
+        onDismissRequest = { if (downloading != null) onHideToBackground() else onDismiss() },
         title = { Text(titleText) },
         text = {
             Column(Modifier.fillMaxWidth()) {
@@ -1297,8 +1323,8 @@ private fun AppUpdateDialog(
         },
         confirmButton = {
             when {
-                downloading != null -> TextButton(enabled = false, onClick = {}) {
-                    Text(stringResource(R.string.update_downloading))
+                downloading != null -> TextButton(onClick = onHideToBackground) {
+                    Text(stringResource(R.string.update_in_background))
                 }
                 readyToInstall != null -> TextButton(onClick = onInstall) {
                     Text(
@@ -1316,14 +1342,16 @@ private fun AppUpdateDialog(
                 }
             }
         },
-        dismissButton = if (downloading == null) {
-            {
+        dismissButton = {
+            if (downloading != null) {
+                TextButton(onClick = onCancelDownload) {
+                    Text(stringResource(R.string.cancel))
+                }
+            } else {
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.update_later))
                 }
             }
-        } else {
-            null
         },
     )
 }

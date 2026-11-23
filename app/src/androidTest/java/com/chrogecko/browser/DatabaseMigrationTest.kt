@@ -92,7 +92,7 @@ class DatabaseMigrationTest {
             .build()
         try {
             val migrated = database.openHelper.writableDatabase
-            assertEquals(11, migrated.version)
+            assertEquals(12, migrated.version)
 
             val tables = mutableSetOf<String>()
             migrated.query("SELECT name FROM sqlite_master WHERE type='table'").use { cursor ->

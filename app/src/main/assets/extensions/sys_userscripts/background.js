@@ -180,8 +180,27 @@ function scheduleRequiresPersist() {
   }, 800);
 }
 
+function isAllowedRemoteUrl(rawUrl, httpsOnly) {
+  let parsed;
+  try {
+    parsed = new URL(String(rawUrl));
+  } catch (error) {
+    return false;
+  }
+  const proto = parsed.protocol.toLowerCase();
+  if (httpsOnly) {
+    if (proto !== "https:") return false;
+  } else if (proto !== "http:" && proto !== "https:") {
+    return false;
+  }
+  return !isBlockedXhrHost(parsed.hostname);
+}
+
 async function fetchRequire(url) {
   try {
+    if (!isAllowedRemoteUrl(url, true)) {
+      throw new Error("Blocked unsafe or non-https @require URL");
+    }
     const response = await fetch(url, {
       credentials: "omit",
       cache: "force-cache",
@@ -232,6 +251,9 @@ async function resolveResources(map, quick = false) {
       continue;
     }
     try {
+      if (!isAllowedRemoteUrl(resourceUrl, false)) {
+        throw new Error("Blocked unsafe @resource URL");
+      }
       const response = await fetch(resourceUrl, { credentials: "omit" });
       if (!response.ok) throw new Error("HTTP " + response.status);
       const buffer = await response.arrayBuffer();

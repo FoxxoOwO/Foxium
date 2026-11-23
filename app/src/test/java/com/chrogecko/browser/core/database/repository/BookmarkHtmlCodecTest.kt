@@ -59,4 +59,18 @@ class BookmarkHtmlCodecTest {
         assertEquals("http://legacy.example/page", parsed[0].url)
         assertEquals("https://valid.example/path", parsed[1].url)
     }
+
+    @Test
+    fun exportPreservesOrphanedBookmarksWhenParentFolderIsMissing() {
+        val bookmarks = listOf(
+            BookmarkEntity(id = 1L, url = "https://orphan.example/item", title = "Orphaned", createdAt = 1L, folderId = 999L),
+        )
+
+        val html = BookmarkHtmlCodec.exportHtml(bookmarks, emptyList())
+        val parsed = BookmarkHtmlCodec.parseHtml(html)
+        assertEquals(1, parsed.size)
+        assertEquals("https://orphan.example/item", parsed[0].url)
+        assertEquals("Orphaned", parsed[0].title)
+        assertEquals(emptyList<String>(), parsed[0].folderPath)
+    }
 }

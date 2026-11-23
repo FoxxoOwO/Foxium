@@ -184,6 +184,17 @@ selectionMock = null;
 execCommandImpl = () => false;
 check("contenteditable ime expansion", textNode.nodeValue, "ChroGecko support ");
 
+// 8. Readonly and disabled textareas must never be expanded.
+area = field(";sig ");
+area.readOnly = true;
+input({ isTrusted: true, target: area, composedPath: () => [area] });
+check("readonly textarea ignored", area.value, ";sig ");
+
+area = field(";sig ");
+area.disabled = true;
+input({ isTrusted: true, target: area, composedPath: () => [area] });
+check("disabled textarea ignored", area.value, ";sig ");
+
 if (failures.length) {
   console.error("expander checks FAILED\n" + failures.join("\n"));
   process.exit(1);

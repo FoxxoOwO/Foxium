@@ -24,9 +24,15 @@ object HlsPlaylistRewriter {
 
     private fun resolve(base: URI, reference: String): String? {
         val trimmed = reference.trim()
-        if (trimmed.isEmpty() || trimmed.startsWith("data:") || trimmed.startsWith("blob:")) return null
+        if (
+            trimmed.isEmpty() ||
+            trimmed.startsWith("data:", ignoreCase = true) ||
+            trimmed.startsWith("blob:", ignoreCase = true)
+        ) {
+            return null
+        }
         return runCatching { base.resolve(trimmed).toString() }
             .getOrNull()
-            ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            ?.takeIf { it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true) }
     }
 }

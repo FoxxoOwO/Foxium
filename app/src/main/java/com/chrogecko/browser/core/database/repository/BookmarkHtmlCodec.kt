@@ -75,6 +75,32 @@ object BookmarkHtmlCodec {
         }
 
         writeNode(parentId = null, indent = "    ")
+        // Also export orphaned folders (or cycles) and bookmarks whose parent folder no longer exists.
+        val orphanFolders = folders
+            .filter { it.id !in visited }
+            .sortedBy { it.name.lowercase() }
+        for (folder in orphanFolders) {
+            if (!visited.add(folder.id)) continue
+            out.append("    ")
+                .append("<DT><H3>")
+                .append(escapeHtml(folder.name))
+                .appendLine("</H3>")
+            out.append("    ").appendLine("<DL><p>")
+            writeNode(folder.id, "        ")
+            out.append("    ").appendLine("</DL><p>")
+        }
+        val orphanBookmarks = bookmarks
+            .filter { it.folderId != null && it.folderId !in visited }
+            .sortedBy { it.createdAt }
+        for (bookmark in orphanBookmarks) {
+            val safeTitle = bookmark.title.ifBlank { bookmark.url }
+            out.append("    ")
+                .append("<DT><A HREF=\"")
+                .append(escapeHtml(bookmark.url))
+                .append("\">")
+                .append(escapeHtml(safeTitle))
+                .appendLine("</A>")
+        }
         out.appendLine("</DL><p>")
         return out.toString()
     }

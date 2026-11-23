@@ -571,4 +571,8 @@
     <string name="update_install">Install</string>
     <string name="update_allow_and_install">Allow &amp; install</string>
     <string name="update_later">Later</string>
+    <string name="update_in_background">In background</string>
+    <string name="update_notification_downloading">Downloading Foxium v%1$s</string>
+    <string name="update_notification_ready_title">Foxium v%1$s ready to install</string>
+    <string name="update_notification_ready_text">Tap to install the update</string>
 </resources>

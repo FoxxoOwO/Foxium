@@ -92,6 +92,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -107,6 +108,7 @@ import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -201,6 +203,11 @@ class BrowserViewModel @Inject constructor(
     val activeTab: StateFlow<BrowserTab?> =
         combine(_tabs, _activeTabId) { tabs, id -> tabs.firstOrNull { it.id == id } }
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val activeTabIsPrivate: StateFlow<Boolean> = activeTab
+        .map { it?.isPrivate == true }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     private val _contextMenu = MutableStateFlow<ContextMenu?>(null)
 
@@ -562,7 +569,10 @@ class BrowserViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Download progress cannot be shown until the user approves notifications. */
-    val notificationPermissionRequests: SharedFlow<Unit> = downloadManager.notificationPermissionRequests
+    val notificationPermissionRequests: Flow<Unit> = merge(
+        downloadManager.notificationPermissionRequests,
+        appUpdateManager.notificationPermissionRequests,
+    )
     val castPlayback: StateFlow<CastPlaybackState> = cast.playback
     val loginSuggestion: StateFlow<AutofillController.Suggestion?> = autofill.suggestion
     val saveLoginRequest: StateFlow<AutofillController.SaveRequest?> = autofill.saveRequest
@@ -684,8 +694,12 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun downloadAvailableUpdate(update: AvailableUpdate) {
-        viewModelScope.launch { appUpdateManager.downloadUpdate(update) }
+        appUpdateManager.startDownload(update)
     }
+
+    fun hideUpdateDownloadToBackground() = appUpdateManager.hideDownloadToBackground()
+
+    fun cancelUpdateDownload() = appUpdateManager.cancelDownload()
 
     fun installReadyUpdate() {
         val current = appUpdateManager.state.value
@@ -1595,7 +1609,7 @@ class BrowserViewModel @Inject constructor(
         tab?.groupId?.let { id -> _groups.value.firstOrNull { it.id == id } }
 
     fun captureThumbnails() {
-        _tabs.value.forEach(::captureThumbnail)
+        activeTab.value?.let(::captureThumbnail)
     }
 
     private fun captureThumbnail(tab: BrowserTab) {

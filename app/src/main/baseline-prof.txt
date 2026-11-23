@@ -1,0 +1,11 @@
+Lcom/chrogecko/browser/ChroGeckoApplication;
+Lcom/chrogecko/browser/MainActivity;
+Lcom/chrogecko/browser/core/engine/**;
+Lcom/chrogecko/browser/core/preferences/**;
+Lcom/chrogecko/browser/core/database/**;
+Lcom/chrogecko/browser/core/network/**;
+Lcom/chrogecko/browser/feature/chromeui/**;
+Lcom/chrogecko/browser/feature/favicons/**;
+Lcom/chrogecko/browser/feature/discover/**;
+Lcom/chrogecko/browser/feature/updates/**;
+Lcom/chrogecko/browser/ui/theme/**;

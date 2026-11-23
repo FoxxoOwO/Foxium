@@ -43,6 +43,7 @@ function expandPlaceholders(text) {
 
 function isEditable(node) {
   if (!node || node.nodeType !== 1) return null;
+  if (node.disabled || node.readOnly) return null;
   if (node.isContentEditable) return node;
   const tag = node.tagName;
   if (tag === "TEXTAREA") return node;
@@ -50,7 +51,6 @@ function isEditable(node) {
   const type = (node.getAttribute("type") || "text").toLowerCase();
   const allowed = ["text", "search", "url", "email", "tel", ""];
   if (allowed.indexOf(type) < 0) return null;
-  if (node.disabled || node.readOnly) return null;
   return node;
 }
 

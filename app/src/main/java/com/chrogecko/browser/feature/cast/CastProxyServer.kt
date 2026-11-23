@@ -16,7 +16,9 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.head
 import io.ktor.server.routing.options
 import io.ktor.server.routing.routing
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -356,24 +358,29 @@ class CastProxyServer @Inject constructor(
         val isHls = target.substringBefore('?').endsWith(".m3u8", ignoreCase = true)
         val isDash = target.substringBefore('?').endsWith(".mpd", ignoreCase = true)
 
-        val request = Request.Builder()
-            .url(target)
-            .apply {
-                stream.media.headers.forEach { (name, value) ->
-                    val lower = name.lowercase()
-                    if (lower in FORBIDDEN_REQUEST_HEADERS || value.isBlank()) return@forEach
-                    if ((lower == "cookie" || lower == "authorization") && !sameSite) return@forEach
-                    // Captured headers can contain invalid characters; skip them instead of
-                    // throwing from the request builder and failing the whole proxy response.
-                    runCatching { header(name, value) }
+        val request = runCatching {
+            Request.Builder()
+                .url(target)
+                .apply {
+                    stream.media.headers.forEach { (name, value) ->
+                        val lower = name.lowercase()
+                        if (lower in FORBIDDEN_REQUEST_HEADERS || value.isBlank()) return@forEach
+                        if ((lower == "cookie" || lower == "authorization") && !sameSite) return@forEach
+                        // Captured headers can contain invalid characters; skip them instead of
+                        // throwing from the request builder and failing the whole proxy response.
+                        runCatching { header(name, value) }
+                    }
+                    header("Accept-Encoding", "identity")
+                    call.request.headers[HttpHeaders.Range]?.let { range ->
+                        if (!isHls && !isDash) header("Range", range)
+                    }
+                    if (headOnly) head() else get()
                 }
-                header("Accept-Encoding", "identity")
-                call.request.headers[HttpHeaders.Range]?.let { range ->
-                    if (!isHls && !isDash) header("Range", range)
-                }
-                if (headOnly) head() else get()
-            }
-            .build()
+                .build()
+        }.getOrElse {
+            call.respond(HttpStatusCode.BadRequest)
+            return
+        }
 
         val upstreamClient = clientFor(originHost)
         val response = try {
@@ -395,7 +402,14 @@ class CastProxyServer @Inject constructor(
             }
 
             if (isHls || (response.header("Content-Type")?.contains("mpegurl", true) == true)) {
-                val body = withContext(Dispatchers.IO) { response.body?.string().orEmpty() }
+                val body = try {
+                    withContext(Dispatchers.IO) {
+                        response.body?.let { readBoundedUtf8(it.byteStream(), MAX_MANIFEST_BYTES) }.orEmpty()
+                    }
+                } catch (error: IOException) {
+                    call.respondText(error.message ?: "Manifest too large", status = HttpStatusCode.BadGateway)
+                    return
+                }
                 val rewritten = HlsPlaylistRewriter.rewrite(
                     playlist = body,
                     baseUrl = response.request.url.toString(),
@@ -410,7 +424,14 @@ class CastProxyServer @Inject constructor(
             }
 
             if (isDash || (response.header("Content-Type")?.contains("dash", true) == true)) {
-                val body = withContext(Dispatchers.IO) { response.body?.string().orEmpty() }
+                val body = try {
+                    withContext(Dispatchers.IO) {
+                        response.body?.let { readBoundedUtf8(it.byteStream(), MAX_MANIFEST_BYTES) }.orEmpty()
+                    }
+                } catch (error: IOException) {
+                    call.respondText(error.message ?: "Manifest too large", status = HttpStatusCode.BadGateway)
+                    return
+                }
                 val rewritten = rewriteDash(body, response.request.url.toString()) { child ->
                     proxiedUrl(token, child)
                 }
@@ -533,7 +554,24 @@ class CastProxyServer @Inject constructor(
         const val HLS_CONTENT_TYPE = "application/vnd.apple.mpegurl"
         const val DASH_CONTENT_TYPE = "application/dash+xml"
         const val MAX_STREAMS = 64
+        const val MAX_MANIFEST_BYTES = 4 * 1024 * 1024
         const val MAX_REDIRECTS = 10
+
+        fun readBoundedUtf8(stream: InputStream, maxBytes: Int): String = stream.use { input ->
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            var total = 0
+            while (true) {
+                val read = input.read(buffer)
+                if (read == -1) break
+                total += read
+                if (total > maxBytes) {
+                    throw IOException("Manifest exceeds $maxBytes bytes")
+                }
+                out.write(buffer, 0, read)
+            }
+            out.toString(Charsets.UTF_8.name())
+        }
         val REDIRECT_CODES = setOf(301, 302, 303, 307, 308)
         const val STREAM_TTL_MS = 12 * 60 * 60 * 1000L
         val PORT_RANGE = 8765..8785
