@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Click test</title></head>
+<body style="font-family:sans-serif;padding:24px">
+<h1>Click test</h1>
+<button id="b" style="font-size:22px;padding:20px 40px">Tap me</button>
+<p id="log" style="font-size:20px">count 0</p>
+<script>
+let n = 0;
+document.getElementById('b').addEventListener('click', () => {
+  n++; document.getElementById('log').textContent = 'count ' + n;
+});
+document.addEventListener('touchstart', () => { document.title = 'touchstart seen'; }, {passive: true});
+</script>
+</body></html>

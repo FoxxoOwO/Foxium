@@ -1,0 +1,37 @@
+{
+  "manifest_version": 2,
+  "name": "Foxium Text Expander",
+  "version": "1.0.0",
+  "description": "Expands the text snippets configured in Foxium settings inside any text field.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sys_expander@chrogecko.browser",
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": [
+    "geckoViewAddons",
+    "nativeMessaging",
+    "storage",
+    "tabs",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}

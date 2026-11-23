@@ -1,0 +1,38 @@
+{
+  "manifest_version": 2,
+  "name": "Foxium Media Sniffer",
+  "version": "1.0.1",
+  "description": "Detects playable media streams and reports them to Foxium for casting.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sys_mediasniffer@chrogecko.browser",
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": [
+    "geckoViewAddons",
+    "nativeMessaging",
+    "webRequest",
+    "webNavigation",
+    "tabs",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

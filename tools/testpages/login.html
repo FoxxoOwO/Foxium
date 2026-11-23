@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Autofill test</title>
+  <style>
+    body { font-family: sans-serif; padding: 24px; }
+    input { display: block; width: 100%; padding: 14px; margin: 12px 0; font-size: 18px; }
+    button { padding: 14px 32px; font-size: 18px; }
+  </style>
+</head>
+<body>
+  <h1>Sign in</h1>
+  <form id="f" onsubmit="submitForm(event)">
+    <input id="u" name="username" type="text" autocomplete="username" placeholder="Username">
+    <input id="p" name="password" type="password" autocomplete="current-password" placeholder="Password">
+    <button type="submit">Sign in</button>
+  </form>
+  <p id="log">idle</p>
+  <script>
+    function submitForm(e) {
+      e.preventDefault();
+      document.getElementById('log').textContent =
+        'submitted user=' + document.getElementById('u').value +
+        ' pass=' + (document.getElementById('p').value ? 'yes' : 'no');
+    }
+  </script>
+</body>
+</html>

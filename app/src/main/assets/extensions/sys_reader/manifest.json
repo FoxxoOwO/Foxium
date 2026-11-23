@@ -1,0 +1,39 @@
+{
+  "manifest_version": 2,
+  "name": "Foxium Reader",
+  "version": "1.0.0",
+  "description": "Extracts the main article of a page with Mozilla Readability and renders it in a clean reading view.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sys_reader@chrogecko.browser",
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": [
+    "geckoViewAddons",
+    "nativeMessaging",
+    "storage",
+    "tabs",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "Readability-readerable.js",
+        "Readability.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

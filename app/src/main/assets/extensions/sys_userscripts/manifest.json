@@ -1,0 +1,39 @@
+{
+  "manifest_version": 2,
+  "name": "Foxium Userscripts",
+  "version": "1.0.1",
+  "description": "Runs Foxium userscripts with Tampermonkey-compatible GM_* APIs.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sys_userscripts@chrogecko.browser",
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": [
+    "geckoViewAddons",
+    "nativeMessaging",
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "matching.js",
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}

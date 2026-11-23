@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ChroGecko" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="colorPrimary">#FF0B57D0</item>
+        <item name="colorAccent">#FF0B57D0</item>
+        <item name="android:colorPrimary">#FF0B57D0</item>
+        <item name="android:colorAccent">#FF0B57D0</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

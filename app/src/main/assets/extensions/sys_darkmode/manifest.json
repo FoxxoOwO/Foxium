@@ -1,0 +1,37 @@
+{
+  "manifest_version": 2,
+  "name": "Foxium Smart Dark",
+  "version": "1.0.1",
+  "description": "Applies Foxium's native and smart force-dark engines to light pages.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sys_darkmode@chrogecko.browser",
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": [
+    "geckoViewAddons",
+    "nativeMessaging",
+    "storage",
+    "tabs",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}

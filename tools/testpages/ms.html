@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>MediaSession API</title></head>
+<body style="font-family:sans-serif;padding:24px">
+<h1>MediaSession API</h1>
+<button id="go" style="font-size:20px;padding:16px 32px">Set session</button>
+<p id="log">idle</p>
+<script>
+document.getElementById('go').onclick = () => {
+  navigator.mediaSession.metadata = new MediaMetadata({title: 'Session test', artist: 'Tester', album: 'Album'});
+  navigator.mediaSession.playbackState = 'playing';
+  document.getElementById('log').textContent = 'metadata set';
+};
+</script>
+</body></html>

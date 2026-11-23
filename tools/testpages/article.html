@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reader mode test article</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  nav a { margin-right: 12px; }
+  .ad { background: #ffe082; padding: 12px; }
+</style>
+</head>
+<body>
+<nav><a href="/">Home</a><a href="/uatest.html">Tests</a><a href="/expand.html">Expander</a></nav>
+<div class="ad">Advertisement banner that reader mode must remove</div>
+<article>
+<h1>How reader mode extracts a page</h1>
+<p class="byline">By ChroGecko Engineering, 20 November 2026</p>
+<p>Reading mode keeps the words and throws away everything else. A browser that offers it has to
+decide, for every page, whether the document is an article at all, and then which part of the
+document holds the prose. Both questions are answered by heuristics that look at paragraph density,
+text length, link density and the nesting of elements around the text.</p>
+<p>The extraction pass scores candidate containers. A container wrapped in a small number of
+elements, holding many long paragraphs and few links, wins. Sidebars, navigation lists, comment
+threads and newsletter boxes lose because their paragraphs are short and their link density is
+high. Advertising blocks usually contain a single image and almost no text, so they never reach
+the score needed to be chosen.</p>
+<p>Once a container is chosen, the cleaner removes attributes, converts relative image sources,
+drops forms and scripts, and serialises the result as HTML. What the reader sees afterwards is a
+document built by the browser: one column, comfortable line height, images limited to the width of
+the column, and colours that follow the system theme.</p>
+<p>Because the transformation happens in the page itself, turning reading mode off is a simple
+restore of the nodes that were replaced. Keeping the original nodes alive, rather than reloading
+the page, means the scroll position and any page state survive the round trip.</p>
+<p>Availability is a separate, cheaper question: a page is probably readable when it has enough
+paragraphs of reasonable length outside of preformatted blocks. Running that check on every load
+costs almost nothing, which is what allows the browser to offer the feature only where it would
+actually work.</p>
+</article>
+<footer><p>Tiny footer.</p></footer>
+</body>
+</html>

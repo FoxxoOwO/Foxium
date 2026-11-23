@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Media test</title></head>
+<body style="font-family:sans-serif;padding:24px">
+<h1>Media test</h1>
+<button id="go" style="font-size:22px;padding:20px 40px" onclick="document.getElementById('a').play()">Play tone</button>
+<p id="log">idle</p>
+<audio id="a" controls src="tone.wav" style="width:100%;margin-top:24px"></audio>
+<script>
+const a = document.getElementById('a'), log = document.getElementById('log');
+document.getElementById('go').onclick = () => { a.play().then(() => log.textContent = 'playing').catch(e => log.textContent = 'error ' + e.name); };
+a.onplay = () => log.textContent = 'playing';
+a.onpause = () => log.textContent = 'paused';
+</script>
+</body></html>

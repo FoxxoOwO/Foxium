@@ -1,0 +1,10 @@
+<!doctype html>
+<title>k:0</title>
+<textarea id="f" rows="4" cols="40" autofocus></textarea>
+<script>
+  let keys = 0;
+  addEventListener("keydown", () => { document.title = "k:" + (++keys); }, true);
+  document.getElementById("f").addEventListener("input", (event) => {
+    document.title += " v:" + JSON.stringify(event.target.value);
+  });
+</script>

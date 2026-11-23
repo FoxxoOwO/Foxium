@@ -1,0 +1,10 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
+<body style="font:20px sans-serif;padding:12px"><h1 id="h">Geo</h1><p id="r">asking…</p>
+<script>
+setTimeout(function(){
+  navigator.geolocation.getCurrentPosition(
+    function(p){ document.getElementById('r').textContent = 'ok ' + p.coords.latitude.toFixed(3) + ',' + p.coords.longitude.toFixed(3); },
+    function(e){ document.getElementById('r').textContent = 'error ' + e.message; },
+    {timeout: 15000});
+}, 900);
+</script></body>

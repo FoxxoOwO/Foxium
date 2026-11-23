@@ -1,0 +1,34 @@
+{
+  "manifest_version": 2,
+  "name": "Foxium Gestures",
+  "version": "1.1.1",
+  "description": "Page-level gestures: pull to refresh and long-press menu targets.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "sys_gestures@chrogecko.browser",
+      "strict_min_version": "128.0"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "permissions": [
+    "nativeMessaging",
+    "geckoViewAddons"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": true
+  }
+}

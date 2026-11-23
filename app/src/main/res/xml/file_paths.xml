@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-files-path name="downloads" path="Download/" />
+    <!-- Public Downloads on API 26-28, where MediaStore is not used yet. -->
+    <external-path name="public_downloads" path="Download/" />
+    <files-path name="internal_downloads" path="downloads/" />
+</paths>

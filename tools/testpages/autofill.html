@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Autofill test</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    input { display: block; width: 100%; padding: 12px; margin: 8px 0; font-size: 17px; }
+    h2 { margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <h2>Shipping</h2>
+  <form id="addr">
+    <input id="name" name="name" autocomplete="name" placeholder="Full name">
+    <input id="street" name="street" autocomplete="street-address" placeholder="Street">
+    <input id="city" name="city" autocomplete="address-level2" placeholder="City">
+    <input id="zip" name="zip" autocomplete="postal-code" placeholder="ZIP">
+    <input id="country" name="country" autocomplete="country" placeholder="Country">
+    <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="Phone">
+  </form>
+  <h2>Payment</h2>
+  <form id="card">
+    <input id="ccname" name="ccname" autocomplete="cc-name" placeholder="Name on card">
+    <input id="ccnum" name="ccnum" autocomplete="cc-number" placeholder="Card number">
+    <input id="ccexp" name="ccexp" autocomplete="cc-exp" placeholder="MM/YY">
+    <input id="cccsc" name="cccsc" autocomplete="cc-csc" placeholder="CVC">
+  </form>
+  <script>
+    const kind = new URLSearchParams(location.search).get('kind');
+    if (kind === 'card') setTimeout(() => document.getElementById('ccnum').focus(), 600);
+    if (kind === 'address') setTimeout(() => document.getElementById('street').focus(), 600);
+  </script>
+</body>
+</html>
