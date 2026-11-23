@@ -1,6 +1,7 @@
 package com.chrogecko.browser.feature.chromeui
 
 import android.os.Build
+import android.text.format.Formatter
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +40,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -55,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -67,6 +70,7 @@ import com.chrogecko.browser.BuildConfig
 import com.chrogecko.browser.R
 import com.chrogecko.browser.core.database.entity.SiteRuleEntity
 import com.chrogecko.browser.core.database.entity.TextSnippetEntity
+import com.chrogecko.browser.feature.updates.UpdateState
 
 private data class ClearDataOption(
     val title: String,
@@ -548,11 +552,17 @@ internal fun TextExpanderSettingsPage(
     }
 }
 
-/** Settings subpage showing app version, engine, release channel, and Android OS details. */
+/** Settings subpage showing app version, engine, release channel, OS details, and auto-updates. */
 @Composable
 internal fun AboutSettingsPage(
+    viewModel: BrowserViewModel,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+    val autoUpdateEnabled by viewModel.autoUpdateEnabled.collectAsStateWithLifecycle()
+    val autoUpdatePrereleases by viewModel.autoUpdatePrereleases.collectAsStateWithLifecycle()
+
     val rows = listOf(
         stringResource(R.string.settings_about_app_version) to "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
         stringResource(R.string.settings_about_engine) to "Mozilla GeckoView",
@@ -610,6 +620,150 @@ internal fun AboutSettingsPage(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                }
+            }
+            item(key = "updates_header") {
+                SettingsSectionHeader(stringResource(R.string.settings_updates_header))
+            }
+            item(key = "updates_auto") {
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_updates_auto_title),
+                    description = stringResource(R.string.settings_updates_auto_desc),
+                    checked = autoUpdateEnabled,
+                    shape = settingsGroupItemShape(0, 3),
+                    onCheckedChange = viewModel::setAutoUpdateEnabled,
+                )
+            }
+            item(key = "updates_prereleases") {
+                SettingsToggleRow(
+                    title = stringResource(R.string.settings_updates_prereleases_title),
+                    description = stringResource(R.string.settings_updates_prereleases_desc),
+                    checked = autoUpdatePrereleases,
+                    shape = settingsGroupItemShape(1, 3),
+                    onCheckedChange = viewModel::setAutoUpdatePrereleases,
+                )
+            }
+            item(key = "updates_status") {
+                Surface(
+                    shape = settingsGroupItemShape(2, 3),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        val statusText = when (val state = updateState) {
+                            UpdateState.Idle -> stringResource(R.string.settings_updates_status_idle)
+                            UpdateState.Checking -> stringResource(R.string.settings_updates_status_checking)
+                            UpdateState.UpToDate -> stringResource(R.string.settings_updates_status_up_to_date)
+                            is UpdateState.Available -> stringResource(
+                                R.string.settings_updates_status_available,
+                                state.update.versionName,
+                                Formatter.formatShortFileSize(context, state.update.apkSizeBytes),
+                            )
+                            is UpdateState.Downloading -> {
+                                val pct = if (state.totalBytes > 0L) {
+                                    ((state.downloadedBytes * 100L) / state.totalBytes).toInt().coerceIn(0, 100)
+                                } else {
+                                    0
+                                }
+                                stringResource(R.string.settings_updates_status_downloading, pct)
+                            }
+                            is UpdateState.ReadyToInstall -> if (state.needsInstallPermission) {
+                                stringResource(R.string.settings_updates_permission_hint)
+                            } else {
+                                stringResource(
+                                    R.string.settings_updates_status_ready,
+                                    state.update.versionName,
+                                )
+                            }
+                            is UpdateState.Error -> stringResource(
+                                R.string.settings_updates_status_error,
+                                state.message,
+                            )
+                        }
+                        Text(
+                            stringResource(R.string.settings_updates_status_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            statusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        val availableNotes = (updateState as? UpdateState.Available)?.update?.releaseNotes.orEmpty()
+                        if (availableNotes.isNotBlank()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                availableNotes,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        val downloading = updateState as? UpdateState.Downloading
+                        if (downloading != null) {
+                            Spacer(Modifier.height(10.dp))
+                            if (downloading.totalBytes > 0L) {
+                                LinearProgressIndicator(
+                                    progress = {
+                                        (downloading.downloadedBytes.toFloat() / downloading.totalBytes.toFloat())
+                                            .coerceIn(0f, 1f)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            } else {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            when (val state = updateState) {
+                                UpdateState.Idle,
+                                UpdateState.UpToDate,
+                                is UpdateState.Error,
+                                -> {
+                                    Button(onClick = viewModel::checkForUpdatesNow) {
+                                        Text(stringResource(R.string.settings_updates_check_now))
+                                    }
+                                }
+                                UpdateState.Checking -> {
+                                    Button(enabled = false, onClick = {}) {
+                                        Text(stringResource(R.string.settings_updates_status_checking))
+                                    }
+                                }
+                                is UpdateState.Available -> {
+                                    Button(onClick = { viewModel.downloadAvailableUpdate(state.update) }) {
+                                        Text(stringResource(R.string.update_download_install))
+                                    }
+                                    TextButton(onClick = viewModel::checkForUpdatesNow) {
+                                        Text(stringResource(R.string.settings_updates_check_now))
+                                    }
+                                }
+                                is UpdateState.Downloading -> {
+                                    Button(enabled = false, onClick = {}) {
+                                        Text(stringResource(R.string.update_downloading))
+                                    }
+                                }
+                                is UpdateState.ReadyToInstall -> {
+                                    Button(onClick = viewModel::installReadyUpdate) {
+                                        Text(
+                                            stringResource(
+                                                if (state.needsInstallPermission) {
+                                                    R.string.update_allow_and_install
+                                                } else {
+                                                    R.string.update_install
+                                                },
+                                            ),
+                                        )
+                                    }
+                                    TextButton(onClick = viewModel::checkForUpdatesNow) {
+                                        Text(stringResource(R.string.settings_updates_check_now))
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

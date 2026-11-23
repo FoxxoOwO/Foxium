@@ -7,18 +7,63 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.chrogecko.browser.core.engine.ChroGeckoRuntime
 import com.chrogecko.browser.core.preferences.AppLocaleManager
 import com.chrogecko.browser.feature.chromeui.ChromeBrowserScreen
 import dagger.hilt.android.AndroidEntryPoint
+import java.util.concurrent.CancellationException
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.GeckoRuntime
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    @Inject
+    lateinit var chroGeckoRuntime: ChroGeckoRuntime
+
     /** Links handed over by other apps (and by pinned shortcuts); cleared once navigated. */
     private val externalUrl = MutableStateFlow<String?>(null)
+    private var pendingWebAuthnResult: GeckoResult<Intent>? = null
+
+    private val webAuthnLauncher =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            val pending = pendingWebAuthnResult ?: return@registerForActivityResult
+            pendingWebAuthnResult = null
+            if (result.resultCode == RESULT_OK && result.data != null) {
+                pending.complete(result.data)
+            } else {
+                pending.completeExceptionally(
+                    CancellationException("WebAuthn cancelled (code=${result.resultCode})"),
+                )
+            }
+        }
+
+    private val runtimeActivityDelegate = GeckoRuntime.ActivityDelegate { pendingIntent ->
+        val geckoResult = GeckoResult<Intent>()
+        runOnUiThread {
+            pendingWebAuthnResult?.completeExceptionally(
+                CancellationException("Superseded by a new WebAuthn request"),
+            )
+            pendingWebAuthnResult = geckoResult
+            runCatching {
+                webAuthnLauncher.launch(
+                    IntentSenderRequest.Builder(pendingIntent.intentSender).build(),
+                )
+            }.onFailure { error ->
+                if (pendingWebAuthnResult === geckoResult) {
+                    pendingWebAuthnResult = null
+                }
+                geckoResult.completeExceptionally(error)
+            }
+        }
+        geckoResult
+    }
 
     override fun attachBaseContext(newBase: Context) {
         val localized = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -31,6 +76,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        chroGeckoRuntime.runtime.activityDelegate = runtimeActivityDelegate
         enableEdgeToEdge()
         // Read the intent even when saved state exists: after process death Android restores the
         // activity with a non-null Bundle but does not call onNewIntent, so an ACTION_VIEW link
@@ -49,5 +95,18 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         externalUrl.value = intent.dataString
+    }
+
+    override fun onDestroy() {
+        pendingWebAuthnResult?.completeExceptionally(
+            CancellationException("Activity destroyed"),
+        )
+        pendingWebAuthnResult = null
+        if (::chroGeckoRuntime.isInitialized &&
+            chroGeckoRuntime.runtime.activityDelegate === runtimeActivityDelegate
+        ) {
+            chroGeckoRuntime.runtime.activityDelegate = null
+        }
+        super.onDestroy()
     }
 }

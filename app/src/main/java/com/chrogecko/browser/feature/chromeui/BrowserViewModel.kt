@@ -18,6 +18,7 @@ import com.chrogecko.browser.core.engine.SelectionMenu
 import com.chrogecko.browser.core.engine.SystemExtensionIds
 import com.chrogecko.browser.core.messaging.NativeEvent
 import com.chrogecko.browser.core.messaging.NativeMessagingBridge
+import com.chrogecko.browser.core.network.ExternalIntentHandler
 import com.chrogecko.browser.core.database.entity.BookmarkEntity
 import com.chrogecko.browser.core.database.entity.BookmarkFolderEntity
 import com.chrogecko.browser.core.database.entity.HistoryEntity
@@ -72,6 +73,9 @@ import com.chrogecko.browser.feature.discover.DiscoverItem
 import com.chrogecko.browser.feature.discover.DiscoverRepository
 import com.chrogecko.browser.feature.discover.RssFeedParser
 import com.chrogecko.browser.feature.search.SearchSuggestion
+import com.chrogecko.browser.feature.updates.AppUpdateManager
+import com.chrogecko.browser.feature.updates.AvailableUpdate
+import com.chrogecko.browser.feature.updates.UpdateState
 import com.chrogecko.browser.feature.favicons.faviconHost
 import com.chrogecko.browser.feature.userscripts.ParsedUserScript
 import com.chrogecko.browser.feature.userscripts.UpdateCheck
@@ -173,6 +177,7 @@ class BrowserViewModel @Inject constructor(
     private val readerMode: ReaderModeFeature,
     private val discoverRepository: DiscoverRepository,
     private val suggestionRepository: com.chrogecko.browser.feature.search.SearchSuggestionRepository,
+    private val appUpdateManager: AppUpdateManager,
 ) : ViewModel() {
 
     val favicons: StateFlow<Map<String, ImageBitmap>> = faviconRepository.icons
@@ -573,6 +578,12 @@ class BrowserViewModel @Inject constructor(
     val mirrorUrl: StateFlow<String?> = _mirrorUrl.asStateFlow()
     val allCastMedia: StateFlow<Map<Long, List<CastMedia>>> = cast.media
 
+    val updateState: StateFlow<UpdateState> = appUpdateManager.state
+    val autoUpdateEnabled: StateFlow<Boolean> = preferences.autoUpdateEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val autoUpdatePrereleases: StateFlow<Boolean> = preferences.autoUpdatePrereleases
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     private var groupCounter = 0
     /** Per-site rules mirrored from Room so a navigation can apply them synchronously. */
     private var siteRuleCache: Map<String, SiteRuleEntity> = emptyMap()
@@ -583,6 +594,9 @@ class BrowserViewModel @Inject constructor(
 
     /** Last URL whose icons were requested, per tab, so one page is queried once. */
     private val iconQueriedUrls = mutableMapOf<String, String>()
+
+    /** Script-opened child tabs (`window.open`) remember their opener so `window.close()` returns there. */
+    private val openerTabIds = HashMap<String, String>()
 
     private val restored = CompletableDeferred<Unit>()
 
@@ -657,6 +671,36 @@ class BrowserViewModel @Inject constructor(
         viewModelScope.launch {
             addons.messages.collect { _messages.tryEmit(it) }
         }
+        viewModelScope.launch {
+            appUpdateManager.checkForUpdates(force = false)
+        }
+    }
+
+    fun checkForUpdatesNow() {
+        viewModelScope.launch { appUpdateManager.checkForUpdates(force = true) }
+    }
+
+    fun downloadAvailableUpdate(update: AvailableUpdate) {
+        viewModelScope.launch { appUpdateManager.downloadUpdate(update) }
+    }
+
+    fun installReadyUpdate() {
+        val current = appUpdateManager.state.value
+        if (current is UpdateState.ReadyToInstall) {
+            appUpdateManager.launchInstaller(current.apkFile)
+        }
+    }
+
+    fun dismissUpdateBanner(tagName: String) {
+        viewModelScope.launch { appUpdateManager.dismissUpdateBanner(tagName) }
+    }
+
+    fun setAutoUpdateEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setAutoUpdateEnabled(enabled) }
+    }
+
+    fun setAutoUpdatePrereleases(enabled: Boolean) {
+        viewModelScope.launch { preferences.setAutoUpdatePrereleases(enabled) }
     }
 
     fun createTab(isPrivate: Boolean, groupId: String? = null, url: String? = null): String {
@@ -691,6 +735,7 @@ class BrowserViewModel @Inject constructor(
         isPrivate: Boolean,
         groupId: String?,
         uri: String,
+        parentTabId: String? = null,
     ): GeckoSession {
         val session = engine.createSession(isPrivate = isPrivate, openNow = false)
         val tab = BrowserTab(
@@ -699,6 +744,7 @@ class BrowserViewModel @Inject constructor(
             isPrivate = isPrivate,
             groupId = groupId,
         )
+        if (parentTabId != null) openerTabIds[tab.id] = parentTabId
         _tabs.update { it + tab }
         observeTab(tab)
         selectTab(tab.id)
@@ -808,22 +854,27 @@ class BrowserViewModel @Inject constructor(
         if (recordUndo) {
             rememberClosed(listOf(tab), localizedString(if (tab.isPrivate) R.string.msg_incognito_tab_closed else R.string.msg_tab_closed))
         }
+        val parentId = openerTabIds.remove(id)
         _tabs.update { list -> list.filterNot { it.id == id } }
         observers.remove(id)?.cancel()
         iconQueriedUrls.remove(id)
         engine.closeSession(id)
         if (!tab.isPrivate) viewModelScope.launch { tabRepository.closeTab(id) }
         if (!wasActive) return
-        when (
-            val replacement = TabClosePolicy.decide(
-                closingIsPrivate = tab.isPrivate,
-                remaining = _tabs.value.map { it.id to it.isPrivate },
-                allowReplacement = allowReplacement,
-            )
-        ) {
-            is TabReplacement.Select -> selectTab(replacement.id)
-            is TabReplacement.Create -> createTab(replacement.isPrivate)
-            TabReplacement.None -> Unit
+        if (parentId != null && _tabs.value.any { it.id == parentId }) {
+            selectTab(parentId)
+        } else {
+            when (
+                val replacement = TabClosePolicy.decide(
+                    closingIsPrivate = tab.isPrivate,
+                    remaining = _tabs.value.map { it.id to it.isPrivate },
+                    allowReplacement = allowReplacement,
+                )
+            ) {
+                is TabReplacement.Select -> selectTab(replacement.id)
+                is TabReplacement.Create -> createTab(replacement.isPrivate)
+                TabReplacement.None -> Unit
+            }
         }
         // selectTab/createTab leave the grid; closing a card in the switcher keeps it open.
         if (keepGridOpen && gridWasOpen) _gridOpen.value = true
@@ -1923,7 +1974,10 @@ class BrowserViewModel @Inject constructor(
         tab.session.externalResponseHandler = ::handleExternalResponse
         // window.open / target="_blank" becomes a new tab, using an unopened child session.
         tab.session.popupHandler = { url -> openUrlInNewTab(url) }
-        tab.session.newSessionHandler = { uri -> createChildSession(tab.isPrivate, tab.groupId, uri) }
+        tab.session.newSessionHandler = { uri ->
+            createChildSession(tab.isPrivate, tab.groupId, uri, parentTabId = tab.id)
+        }
+        tab.session.closeRequestHandler = { closeTab(tab.id, recordUndo = false) }
         tab.session.printHandler = { file -> _printFile.value = file }
         // Applied on each load request so the rules affect the document that is loading.
         tab.session.siteRuleApplier = { host ->
@@ -1935,11 +1989,16 @@ class BrowserViewModel @Inject constructor(
             if (tab.id == activeTab.value?.id) _desktopMode.value = tab.session.desktopMode
         }
         tab.session.navigationInterceptor = { url ->
-            if (responseIsUserscript(url)) {
-                installUserscript(url)
-                true
-            } else {
-                false
+            when {
+                ExternalIntentHandler.isIntentUri(url) ->
+                    ExternalIntentHandler.launchIntentUri(runtime.appContext, url) { fallback ->
+                        tab.session.load(fallback)
+                    }
+                responseIsUserscript(url) -> {
+                    installUserscript(url)
+                    true
+                }
+                else -> false
             }
         }
         observers[tab.id] = viewModelScope.launch {

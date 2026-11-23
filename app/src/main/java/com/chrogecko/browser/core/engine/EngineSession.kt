@@ -115,6 +115,9 @@ class EngineSession(
     /** Called for `target="_blank"` / `window.open`; return an unopened child [GeckoSession] if handled. */
     var newSessionHandler: ((String) -> GeckoSession?)? = null
 
+    /** Called when page script invokes `window.close()` on a script-opened tab. */
+    var closeRequestHandler: (() -> Unit)? = null
+
     val desktopMode: Boolean
         get() = geckoSession.settings.userAgentMode == GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
 
@@ -305,6 +308,10 @@ class EngineSession(
 
             override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {
                 _fullscreen.value = fullScreen
+            }
+
+            override fun onCloseRequest(session: GeckoSession) {
+                closeRequestHandler?.invoke()
             }
 
         }

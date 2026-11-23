@@ -4,4 +4,5 @@
     <!-- Public Downloads on API 26-28, where MediaStore is not used yet. -->
     <external-path name="public_downloads" path="Download/" />
     <files-path name="internal_downloads" path="downloads/" />
+    <cache-path name="updates" path="updates/" />
 </paths>

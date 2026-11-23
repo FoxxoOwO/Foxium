@@ -258,6 +258,7 @@ fun ChromeSettingsScreen(
                     onBack = navigateBack,
                 )
                 SettingsRoute.About -> AboutSettingsPage(
+                    viewModel = viewModel,
                     onBack = navigateBack,
                 )
             }

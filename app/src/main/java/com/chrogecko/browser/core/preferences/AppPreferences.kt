@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -258,6 +259,30 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
         .map { it[BUILTIN_PASSWORD_SAVE] ?: true }
         .distinctUntilChanged()
 
+    /** Automatic background checks against GitHub Releases. */
+    val autoUpdateEnabled: Flow<Boolean> = context.preferences.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[AUTO_UPDATE_ENABLED] ?: true }
+        .distinctUntilChanged()
+
+    /** Whether experimental/pre-release GitHub builds are offered as updates. */
+    val autoUpdatePrereleases: Flow<Boolean> = context.preferences.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[AUTO_UPDATE_PRERELEASES] ?: true }
+        .distinctUntilChanged()
+
+    /** Epoch millis of the last completed GitHub Releases check. */
+    val lastUpdateCheckMs: Flow<Long> = context.preferences.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[LAST_UPDATE_CHECK_MS] ?: 0L }
+        .distinctUntilChanged()
+
+    /** Release tag dismissed by the user in the update prompt. */
+    val dismissedUpdateTag: Flow<String> = context.preferences.data
+        .catch { emit(emptyPreferences()) }
+        .map { it[DISMISSED_UPDATE_TAG] ?: "" }
+        .distinctUntilChanged()
+
     val preferredColorScheme: Flow<Int> = forceDark.map { enabled ->
         if (enabled) GeckoRuntimeSettings.COLOR_SCHEME_DARK else GeckoRuntimeSettings.COLOR_SCHEME_SYSTEM
     }.distinctUntilChanged()
@@ -491,6 +516,22 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
         context.preferences.edit { it[BUILTIN_PASSWORD_SAVE] = enabled }
     }
 
+    suspend fun setAutoUpdateEnabled(enabled: Boolean) {
+        context.preferences.edit { it[AUTO_UPDATE_ENABLED] = enabled }
+    }
+
+    suspend fun setAutoUpdatePrereleases(enabled: Boolean) {
+        context.preferences.edit { it[AUTO_UPDATE_PRERELEASES] = enabled }
+    }
+
+    suspend fun setLastUpdateCheckMs(timestampMs: Long) {
+        context.preferences.edit { it[LAST_UPDATE_CHECK_MS] = timestampMs }
+    }
+
+    suspend fun setDismissedUpdateTag(tag: String) {
+        context.preferences.edit { it[DISMISSED_UPDATE_TAG] = tag }
+    }
+
     private companion object {
         val FORCE_DARK = booleanPreferencesKey("force_dark_mode")
         val TRACKING_PROTECTION = booleanPreferencesKey("tracking_protection")
@@ -528,5 +569,9 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
         val HIDDEN_DISCOVER = stringSetPreferencesKey("hidden_discover")
         val ANDROID_AUTOFILL = booleanPreferencesKey("android_autofill_enabled")
         val BUILTIN_PASSWORD_SAVE = booleanPreferencesKey("builtin_password_save_enabled")
+        val AUTO_UPDATE_ENABLED = booleanPreferencesKey("auto_update_enabled")
+        val AUTO_UPDATE_PRERELEASES = booleanPreferencesKey("auto_update_prereleases")
+        val LAST_UPDATE_CHECK_MS = longPreferencesKey("last_update_check_ms")
+        val DISMISSED_UPDATE_TAG = stringPreferencesKey("dismissed_update_tag")
     }
 }

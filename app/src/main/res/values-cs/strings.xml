@@ -564,4 +564,27 @@
     <string name="discover_rss_empty_feeds">Zatím nemáte žádné zdroje RSS. Přidejte adresu kanálu pro zobrazení článků.</string>
     <string name="discover_rss_no_articles">Ze zdrojů RSS se nepodařilo načíst žádné články.</string>
     <string name="cd_remove_rss_source">Odebrat zdroj RSS</string>
+    <string name="settings_updates_header">Aktualizace</string>
+    <string name="settings_updates_auto_title">Automaticky kontrolovat aktualizace</string>
+    <string name="settings_updates_auto_desc">Při spuštění hledat novější verze Foxia na GitHub Releases</string>
+    <string name="settings_updates_prereleases_title">Zahrnout experimentální vydání</string>
+    <string name="settings_updates_prereleases_desc">Nabízet i experimentální testovací sestavení (pre-release)</string>
+    <string name="settings_updates_status_title">Stav aktualizací</string>
+    <string name="settings_updates_status_idle">Připraveno ke kontrole na GitHub Releases</string>
+    <string name="settings_updates_status_checking">Kontroluji aktualizace…</string>
+    <string name="settings_updates_status_up_to_date">Foxium je aktuální</string>
+    <string name="settings_updates_status_available">Je dostupná aktualizace: v%1$s (%2$s)</string>
+    <string name="settings_updates_status_downloading">Stahuji aktualizaci… %1$d%%</string>
+    <string name="settings_updates_status_ready">Foxium v%1$s je připraveno k instalaci</string>
+    <string name="settings_updates_status_error">Aktualizace selhala: %1$s</string>
+    <string name="settings_updates_permission_hint">Povolte instalaci aplikací z Foxia v nastavení Androidu a poté klepněte na Nainstalovat</string>
+    <string name="settings_updates_check_now">Zkontrolovat aktualizace</string>
+    <string name="update_dialog_title">Je dostupný Foxium %1$s</string>
+    <string name="update_dialog_title_experimental">Foxium %1$s (Experimentální)</string>
+    <string name="update_download_install">Stáhnout a nainstalovat</string>
+    <string name="update_downloading">Stahování…</string>
+    <string name="update_download_progress">%1$s / %2$s</string>
+    <string name="update_install">Nainstalovat</string>
+    <string name="update_allow_and_install">Povolit a nainstalovat</string>
+    <string name="update_later">Později</string>
 </resources>

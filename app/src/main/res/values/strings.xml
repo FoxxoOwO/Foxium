@@ -548,4 +548,27 @@
     <string name="discover_rss_empty_feeds">No RSS sources yet. Add a feed URL to see articles here.</string>
     <string name="discover_rss_no_articles">No articles loaded from your RSS sources.</string>
     <string name="cd_remove_rss_source">Remove RSS source</string>
+    <string name="settings_updates_header">Updates</string>
+    <string name="settings_updates_auto_title">Automatic update checks</string>
+    <string name="settings_updates_auto_desc">Check GitHub Releases on startup for newer Foxium builds</string>
+    <string name="settings_updates_prereleases_title">Include experimental releases</string>
+    <string name="settings_updates_prereleases_desc">Offer experimental pre-release builds when available</string>
+    <string name="settings_updates_status_title">Update status</string>
+    <string name="settings_updates_status_idle">Ready to check GitHub Releases</string>
+    <string name="settings_updates_status_checking">Checking for updates…</string>
+    <string name="settings_updates_status_up_to_date">Foxium is up to date</string>
+    <string name="settings_updates_status_available">Update available: v%1$s (%2$s)</string>
+    <string name="settings_updates_status_downloading">Downloading update… %1$d%%</string>
+    <string name="settings_updates_status_ready">Foxium v%1$s is ready to install</string>
+    <string name="settings_updates_status_error">Update failed: %1$s</string>
+    <string name="settings_updates_permission_hint">Allow app installs from Foxium in Android settings, then tap Install</string>
+    <string name="settings_updates_check_now">Check for updates</string>
+    <string name="update_dialog_title">Foxium %1$s available</string>
+    <string name="update_dialog_title_experimental">Foxium %1$s (Experimental)</string>
+    <string name="update_download_install">Download &amp; install</string>
+    <string name="update_downloading">Downloading…</string>
+    <string name="update_download_progress">%1$s / %2$s</string>
+    <string name="update_install">Install</string>
+    <string name="update_allow_and_install">Allow &amp; install</string>
+    <string name="update_later">Later</string>
 </resources>

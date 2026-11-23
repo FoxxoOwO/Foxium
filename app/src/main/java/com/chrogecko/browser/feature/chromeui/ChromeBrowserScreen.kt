@@ -6,6 +6,7 @@ import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.speech.RecognizerIntent
+import android.text.format.Formatter
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,16 +31,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -51,6 +57,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
@@ -61,6 +68,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +77,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -92,6 +101,8 @@ import com.chrogecko.browser.core.preferences.AppLocaleManager
 import com.chrogecko.browser.core.ui.Haptics
 import com.chrogecko.browser.feature.cast.MirrorCaptureService
 import com.chrogecko.browser.feature.favicons.faviconHost
+import com.chrogecko.browser.feature.updates.AvailableUpdate
+import com.chrogecko.browser.feature.updates.UpdateState
 import com.chrogecko.browser.ui.theme.ChroGeckoTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -185,6 +196,7 @@ private fun ChromeBrowserContent(
     val omniboxSuggestions by viewModel.omniboxSuggestions.collectAsStateWithLifecycle()
     val pendingUserscript by viewModel.pendingUserScript.collectAsStateWithLifecycle()
     val pendingAddonInstall by viewModel.pendingAddonInstall.collectAsStateWithLifecycle()
+    val updateState by viewModel.updateState.collectAsStateWithLifecycle()
     val favicons by viewModel.favicons.collectAsStateWithLifecycle()
     val castPlayback by viewModel.castPlayback.collectAsStateWithLifecycle()
     val mirrorUrl by viewModel.mirrorUrl.collectAsStateWithLifecycle()
@@ -386,19 +398,63 @@ private fun ChromeBrowserContent(
     val isNewTab = currentUrl.isBlank() || currentUrl == "about:blank"
     val isPrivateTab = activeTab?.isPrivate == true
     val hideToolbar = toolbarAutoHide && toolbarHidden && !fullscreen && !focused && !isNewTab && !grid
+    val focusManager = LocalFocusManager.current
+    val currentFocused by rememberUpdatedState(focused)
     var toolbarFocusGuard by remember { mutableStateOf(false) }
-    var wasToolbarHidden by remember { mutableStateOf(hideToolbar) }
-    LaunchedEffect(hideToolbar) {
-        if (wasToolbarHidden && !hideToolbar) {
-            wasToolbarHidden = false
+    var focusGuardToken by remember { mutableIntStateOf(0) }
+    val insetsView = LocalView.current
+    var imeVisible by remember { mutableStateOf(false) }
+    // Observe layout passes instead of polling root insets on a timer, keeping Compose's own
+    // insets dispatch untouched.
+    DisposableEffect(insetsView) {
+        val readIme = {
+            ViewCompat.getRootWindowInsets(insetsView)
+                ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        }
+        imeVisible = readIme()
+        val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            val visible = readIme()
+            if (imeVisible != visible) {
+                if (imeVisible && !visible && !currentFocused) {
+                    // Keyboard just closed after typing into a page; guard frame 0 so the
+                    // re-appearing toolbar cannot steal focus during Android's focus search.
+                    toolbarFocusGuard = true
+                    focusGuardToken++
+                    focusManager.clearFocus()
+                }
+                imeVisible = visible
+            }
+        }
+        insetsView.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        onDispose {
+            if (insetsView.viewTreeObserver.isAlive) {
+                insetsView.viewTreeObserver.removeOnGlobalLayoutListener(listener)
+            }
+        }
+    }
+    val topToolbarVisible = !toolbarBottom && !fullscreen && !hideToolbar
+    // Hide only while typing into the page. When the omnibox itself has focus, it lives inside
+    // this toolbar - hiding it would make the field vanish under the user's fingers.
+    val bottomToolbarVisible = toolbarBottom && !fullscreen && !hideToolbar &&
+        (!imeVisible || focused)
+    val toolbarVisible = topToolbarVisible || bottomToolbarVisible
+    var wasToolbarVisible by remember { mutableStateOf(toolbarVisible) }
+    LaunchedEffect(toolbarVisible) {
+        if (!wasToolbarVisible && toolbarVisible) {
+            toolbarFocusGuard = true
+            focusGuardToken++
+        }
+        wasToolbarVisible = toolbarVisible
+    }
+    LaunchedEffect(focusGuardToken) {
+        if (focusGuardToken > 0) {
             try {
                 toolbarFocusGuard = true
-                kotlinx.coroutines.delay(400)
+                focusManager.clearFocus()
+                kotlinx.coroutines.delay(450)
             } finally {
                 toolbarFocusGuard = false
             }
-        } else {
-            wasToolbarHidden = hideToolbar
         }
     }
     val amoAddonSlug by viewModel.amoAddonSlug.collectAsStateWithLifecycle()
@@ -450,32 +506,6 @@ private fun ChromeBrowserContent(
                 onFocusRequestConsumed = { omniboxFocusRequest = 0 },
             )
         }
-        val topToolbarVisible = !toolbarBottom && !fullscreen && !hideToolbar
-        val insetsView = androidx.compose.ui.platform.LocalView.current
-        var imeVisible by remember { mutableStateOf(false) }
-        // Observe layout passes instead of polling root insets on a timer, keeping Compose's own
-        // insets dispatch untouched.
-        DisposableEffect(insetsView) {
-            val readIme = {
-                ViewCompat.getRootWindowInsets(insetsView)
-                    ?.isVisible(WindowInsetsCompat.Type.ime()) == true
-            }
-            imeVisible = readIme()
-            val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                val visible = readIme()
-                if (imeVisible != visible) imeVisible = visible
-            }
-            insetsView.viewTreeObserver.addOnGlobalLayoutListener(listener)
-            onDispose {
-                if (insetsView.viewTreeObserver.isAlive) {
-                    insetsView.viewTreeObserver.removeOnGlobalLayoutListener(listener)
-                }
-            }
-        }
-        // Hide only while typing into the page. When the omnibox itself has focus, it lives inside
-        // this toolbar - hiding it would make the field vanish under the user's fingers.
-        val bottomToolbarVisible = toolbarBottom && !fullscreen && !hideToolbar &&
-            (!imeVisible || focused)
         // The page receives its padding in one step; only the toolbar itself is animated with a
         // translation, so GeckoView is not re-laid out on every animation frame.
         Column(
@@ -834,6 +864,38 @@ private fun ChromeBrowserContent(
         )
     }
 
+    if (!settingsOpen) {
+        when (val upd = updateState) {
+            is UpdateState.Available -> if (!upd.bannerDismissed) {
+                AppUpdateDialog(
+                    update = upd.update,
+                    downloading = null,
+                    readyToInstall = null,
+                    onDownload = { viewModel.downloadAvailableUpdate(upd.update) },
+                    onInstall = {},
+                    onDismiss = { viewModel.dismissUpdateBanner(upd.update.tagName) },
+                )
+            }
+            is UpdateState.Downloading -> AppUpdateDialog(
+                update = upd.update,
+                downloading = upd,
+                readyToInstall = null,
+                onDownload = {},
+                onInstall = {},
+                onDismiss = {},
+            )
+            is UpdateState.ReadyToInstall -> AppUpdateDialog(
+                update = upd.update,
+                downloading = null,
+                readyToInstall = upd,
+                onDownload = {},
+                onInstall = viewModel::installReadyUpdate,
+                onDismiss = { viewModel.dismissUpdateBanner(upd.update.tagName) },
+            )
+            else -> Unit
+        }
+    }
+
     if (sheet != ChromeSheet.None) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
@@ -1158,4 +1220,110 @@ private fun pinToHomeScreen(context: Context, url: String, title: String) {
         )
         .build()
     ShortcutManagerCompat.requestPinShortcut(context, shortcut, null)
+}
+
+@Composable
+private fun AppUpdateDialog(
+    update: AvailableUpdate,
+    downloading: UpdateState.Downloading?,
+    readyToInstall: UpdateState.ReadyToInstall?,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val titleText = if (update.isPrerelease) {
+        stringResource(R.string.update_dialog_title_experimental, update.versionName)
+    } else {
+        stringResource(R.string.update_dialog_title, update.versionName)
+    }
+    AlertDialog(
+        onDismissRequest = { if (downloading == null) onDismiss() },
+        title = { Text(titleText) },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                val sizeLabel = Formatter.formatShortFileSize(context, update.apkSizeBytes)
+                Text(
+                    text = "${update.apkName} • $sizeLabel",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (update.releaseNotes.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 200.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        Text(
+                            text = update.releaseNotes,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                if (downloading != null) {
+                    Spacer(Modifier.height(14.dp))
+                    if (downloading.totalBytes > 0L) {
+                        val fraction = (downloading.downloadedBytes.toFloat() / downloading.totalBytes.toFloat())
+                            .coerceIn(0f, 1f)
+                        LinearProgressIndicator(
+                            progress = { fraction },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.update_download_progress,
+                                Formatter.formatShortFileSize(context, downloading.downloadedBytes),
+                                Formatter.formatShortFileSize(context, downloading.totalBytes),
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                } else if (readyToInstall?.needsInstallPermission == true) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(R.string.settings_updates_permission_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            when {
+                downloading != null -> TextButton(enabled = false, onClick = {}) {
+                    Text(stringResource(R.string.update_downloading))
+                }
+                readyToInstall != null -> TextButton(onClick = onInstall) {
+                    Text(
+                        stringResource(
+                            if (readyToInstall.needsInstallPermission) {
+                                R.string.update_allow_and_install
+                            } else {
+                                R.string.update_install
+                            },
+                        ),
+                    )
+                }
+                else -> TextButton(onClick = onDownload) {
+                    Text(stringResource(R.string.update_download_install))
+                }
+            }
+        },
+        dismissButton = if (downloading == null) {
+            {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.update_later))
+                }
+            }
+        } else {
+            null
+        },
+    )
 }
