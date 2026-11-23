@@ -104,14 +104,18 @@ fun EnginePromptHost(
             // Gecko blocks the picker request until an answer arrives, so open SAF immediately.
             LaunchedEffect(prompt.id) {
                 val mime = normalizeMimeTypes(prompt.mimeTypes)
-                if (prompt.multiple) multiPicker.launch(mime) else singlePicker.launch(mime)
+                runCatching {
+                    if (prompt.multiple) multiPicker.launch(mime) else singlePicker.launch(mime)
+                }.onFailure {
+                    onFiles(emptyList())
+                }
             }
         }
     }
 }
 
 private fun normalizeMimeTypes(rawTypes: List<String>): Array<String> {
-    val nonBlank = rawTypes.map { it.trim() }.filter { it.isNotEmpty() }
+    val nonBlank = rawTypes.map { it.substringBefore(';').trim() }.filter { it.isNotEmpty() }
     if (nonBlank.isEmpty()) return arrayOf("*/*")
     val mimeMap = MimeTypeMap.getSingleton()
     val mapped = nonBlank.map { token ->

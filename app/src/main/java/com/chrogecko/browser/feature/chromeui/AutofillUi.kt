@@ -142,14 +142,14 @@ internal fun AddressDialog(onSave: (AddressEntity) -> Unit, onDismiss: () -> Uni
                 onClick = {
                     onSave(
                         AddressEntity(
-                            label = label.ifBlank { fallbackLabel },
-                            name = name,
-                            street = street,
-                            city = city,
-                            postal = postal,
-                            country = country,
-                            phone = phone,
-                            email = email,
+                            label = label.trim().ifBlank { fallbackLabel },
+                            name = name.trim(),
+                            street = street.trim(),
+                            city = city.trim(),
+                            postal = postal.trim(),
+                            country = country.trim(),
+                            phone = phone.trim(),
+                            email = email.trim(),
                             updatedAt = System.currentTimeMillis(),
                         ),
                     )
@@ -192,7 +192,7 @@ internal fun CardDialog(
         confirmButton = {
             TextButton(
                 enabled = number.length >= 12,
-                onClick = { onSave(label, name, number, expiry) },
+                onClick = { onSave(label.trim(), name.trim(), number, expiry.trim()) },
             ) { Text(stringResource(R.string.save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },

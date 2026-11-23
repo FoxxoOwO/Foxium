@@ -85,6 +85,7 @@ fun CastMiniController(
                 )
                 Text(
                     state.deviceName ?: stringResource(R.string.connected),
+                    overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -192,8 +193,14 @@ fun CastExpandedController(
                     }
                     if (!dragging) scrub = state.positionMs.toFloat()
                 }
+                LaunchedEffect(seeking) {
+                    if (!seeking) return@LaunchedEffect
+                    kotlinx.coroutines.delay(3_000L)
+                    seeking = false
+                }
                 Slider(
                     value = scrub.coerceIn(0f, duration.toFloat()),
+                    enabled = state.durationMs > 0L,
                     onValueChange = {
                         dragging = true
                         scrub = it

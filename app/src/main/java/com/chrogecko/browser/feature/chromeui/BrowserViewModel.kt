@@ -657,9 +657,14 @@ class BrowserViewModel @Inject constructor(
                     bookmarks.isBookmarked(url)
                 val host = url?.let(DarkModeFeature::hostOf)
                 _currentHost.value = host
-                val explicit = host?.let { darkMode.explicitMode(it) }
-                _siteDarkMode.value = explicit?.let { it != com.chrogecko.browser.core.database.entity.DarkModeMode.OFF }
-                    ?: forceDark.value
+                if (host == null) {
+                    _siteDarkMode.value = false
+                } else {
+                    val explicit = darkMode.explicitMode(host)
+                    _siteDarkMode.value = explicit?.let {
+                        it != com.chrogecko.browser.core.database.entity.DarkModeMode.OFF
+                    } ?: forceDark.value
+                }
             }
         }
         viewModelScope.launch {
@@ -802,42 +807,46 @@ class BrowserViewModel @Inject constructor(
             return
         }
         restoring = true
-        val restoredTabs = saved.map { entity ->
-            val session = engine.createSession(isPrivate = false)
-            entity to BrowserTab(
-                id = session.id,
-                session = session,
-                isPrivate = false,
-                groupId = entity.groupId,
-            )
-        }
-        val active = restoredTabs.maxByOrNull { it.first.lastActiveAt }?.second
-            ?: restoredTabs.first().second
-        _tabs.value = restoredTabs.map { it.second }
-        restoredTabs.forEach { (entity, tab) ->
-            tab.session.setActive(tab.id == active.id)
-            observeTab(tab)
-            val url = entity.url
-            val state = entity.sessionState
-            // Restore first: Gecko replays the tab's history and its scroll offsets.
-            if (state == null || !tab.session.restoreState(state)) {
-                if (url != null && url != "about:blank") tab.session.load(url)
+        val active: BrowserTab
+        try {
+            val restoredTabs = saved.map { entity ->
+                val session = engine.createSession(isPrivate = false)
+                entity to BrowserTab(
+                    id = session.id,
+                    session = session,
+                    isPrivate = false,
+                    groupId = entity.groupId,
+                )
             }
+            active = restoredTabs.maxByOrNull { it.first.lastActiveAt }?.second
+                ?: restoredTabs.first().second
+            _tabs.value = restoredTabs.map { it.second }
+            restoredTabs.forEach { (entity, tab) ->
+                tab.session.setActive(tab.id == active.id)
+                observeTab(tab)
+                val url = entity.url
+                val state = entity.sessionState
+                // Restore first: Gecko replays the tab's history and its scroll offsets.
+                if (state == null || !tab.session.restoreState(state)) {
+                    if (url != null && url != "about:blank") tab.session.load(url)
+                }
+            }
+            val replacementEntities = restoredTabs.mapIndexed { index, (entity, tab) ->
+                TabEntity(
+                    id = tab.id,
+                    url = tab.state.url.takeIf { it != "about:blank" } ?: entity.url,
+                    title = entity.title,
+                    groupId = entity.groupId,
+                    isPrivate = false,
+                    sortOrder = index,
+                    lastActiveAt = entity.lastActiveAt,
+                    sessionState = entity.sessionState,
+                )
+            }
+            tabRepository.replaceNormalTabs(replacementEntities)
+        } finally {
+            restoring = false
         }
-        val replacementEntities = restoredTabs.mapIndexed { index, (entity, tab) ->
-            TabEntity(
-                id = tab.id,
-                url = tab.state.url.takeIf { it != "about:blank" } ?: entity.url,
-                title = entity.title,
-                groupId = entity.groupId,
-                isPrivate = false,
-                sortOrder = index,
-                lastActiveAt = entity.lastActiveAt,
-                sessionState = entity.sessionState,
-            )
-        }
-        tabRepository.replaceNormalTabs(replacementEntities)
-        restoring = false
         selectTab(active.id)
     }
 
@@ -848,6 +857,7 @@ class BrowserViewModel @Inject constructor(
         if (previous != null && previous.id != id) {
             previous.session.clearFind()
             captureThumbnail(previous)
+            _autofillOptions.value = emptyList()
         }
         _tabs.value.forEach { it.session.setActive(it.id == id) }
         _activeTabId.value = id
@@ -902,11 +912,12 @@ class BrowserViewModel @Inject constructor(
         val restored = closedTabs
         closedTabs = emptyList()
         _undoMessage.value = null
+        val liveGroupIds = _groups.value.mapTo(HashSet()) { it.id }
         val restoredIds = restored.map { closed ->
             createTab(
                 isPrivate = closed.isPrivate,
-                groupId = closed.groupId,
-                url = closed.url.ifBlank { null },
+                groupId = closed.groupId?.takeIf { it in liveGroupIds },
+                url = closed.url.takeUnless { it.isBlank() || it == "about:blank" },
             )
         }
         // createTab() selects each new tab; reselect the originally active one by its new id.
@@ -1051,12 +1062,13 @@ class BrowserViewModel @Inject constructor(
         desktopSite: Boolean,
         readerModeForSite: Boolean = false,
     ) {
-        if (host.isBlank()) return
+        val normalizedHost = host.trim().lowercase().trimEnd('.')
+        if (normalizedHost.isBlank()) return
         viewModelScope.launch {
-            siteRules.set(host, blockJavascript, desktopSite, readerModeForSite)
+            siteRules.set(normalizedHost, blockJavascript, desktopSite, readerModeForSite)
             val tab = activeTab.value
             val activeHost = tab?.let { hostOf(it.state.url) }
-            if (tab != null && activeHost != null && activeHost.removePrefix("www.") == host.removePrefix("www.")) {
+            if (tab != null && activeHost != null && activeHost.removePrefix("www.") == normalizedHost.removePrefix("www.")) {
                 tab.session.applySiteRules(blockJavascript, desktopSite)
                 _desktopMode.value = tab.session.desktopMode
                 // Session settings only affect the next document, so reload to show the effect.
@@ -1114,9 +1126,15 @@ class BrowserViewModel @Inject constructor(
     fun readerState(url: String): ReaderModeFeature.ReaderState = readerMode.stateFor(url)
 
     fun addSiteRule(host: String) {
-        val clean = host.trim().substringAfter("://").substringBefore('/').substringBefore(':')
+        val clean = host.trim()
+            .lowercase()
+            .substringAfter("://")
+            .substringBefore('/')
+            .substringBefore(':')
+            .trimEnd('.')
+            .removePrefix("www.")
         if (clean.isBlank()) return
-        setSiteRule(clean.removePrefix("www."), false, false)
+        setSiteRule(clean, false, false)
     }
 
     private val _printFile = MutableStateFlow<File?>(null)
@@ -1142,13 +1160,14 @@ class BrowserViewModel @Inject constructor(
     fun navigate(input: String) {
         val target = normalizeOmniboxInput(input, activeSearchEngine.value.template)
         val tab = activeTab.value ?: return
+        clearSuggestions()
+        _omniboxFocused.value = false
         if (target.substringBefore('?').endsWith(".user.js", ignoreCase = true)) {
             installUserscript(target)
             return
         }
         tab.session.load(target)
-        _omniboxText.value = target
-        _omniboxFocused.value = false
+        _omniboxText.value = displayUrl(target)
     }
 
     fun openContextUrl(url: String, isPrivate: Boolean = false) {
@@ -1458,6 +1477,9 @@ class BrowserViewModel @Inject constructor(
             return
         }
         session.find(query) { result ->
+            if (activeTab.value?.session !== session || !_find.value.visible || _find.value.query != query) {
+                return@find
+            }
             _find.update {
                 it.copy(
                     found = result.found,
@@ -1474,8 +1496,12 @@ class BrowserViewModel @Inject constructor(
 
     private fun findAgain(forward: Boolean) {
         val session = activeTab.value?.session ?: return
-        if (_find.value.query.isBlank()) return
+        val query = _find.value.query
+        if (query.isBlank()) return
         session.findAgain(forward) { result ->
+            if (activeTab.value?.session !== session || !_find.value.visible || _find.value.query != query) {
+                return@findAgain
+            }
             _find.update {
                 it.copy(
                     found = result.found,
@@ -1508,7 +1534,7 @@ class BrowserViewModel @Inject constructor(
     fun addTabToActiveGroup() {
         val tab = activeTab.value ?: return
         val groupId = tab.groupId ?: return
-        createTab(isPrivate = false, groupId = groupId)
+        createTab(isPrivate = tab.isPrivate, groupId = groupId)
     }
 
     fun renameGroup(groupId: String, title: String) {
@@ -1518,7 +1544,8 @@ class BrowserViewModel @Inject constructor(
         val updated = group.copy(title = trimmed)
         _groups.update { groups -> groups.map { if (it.id == groupId) updated else it } }
         viewModelScope.launch {
-            tabRepository.updateGroup(groupId, updated.title, updated.color.toInt())
+            val latest = _groups.value.firstOrNull { it.id == groupId } ?: return@launch
+            tabRepository.updateGroup(groupId, latest.title, latest.color.toInt())
         }
     }
 
@@ -1527,7 +1554,8 @@ class BrowserViewModel @Inject constructor(
         val updated = group.copy(color = color)
         _groups.update { groups -> groups.map { if (it.id == groupId) updated else it } }
         viewModelScope.launch {
-            tabRepository.updateGroup(groupId, updated.title, color.toInt())
+            val latest = _groups.value.firstOrNull { it.id == groupId } ?: return@launch
+            tabRepository.updateGroup(groupId, latest.title, latest.color.toInt())
         }
     }
 
@@ -1583,7 +1611,9 @@ class BrowserViewModel @Inject constructor(
             _tabs.update { list ->
                 list.map { if (it.id == tabId) it.copy(groupId = existing.id) else it }
             }
-            viewModelScope.launch { tabRepository.assignToGroup(tabId, existing.id) }
+            if (!dragged.isPrivate) {
+                viewModelScope.launch { tabRepository.assignToGroup(tabId, existing.id) }
+            }
             return
         }
 
@@ -1597,7 +1627,7 @@ class BrowserViewModel @Inject constructor(
         _tabs.update { list ->
             list.map { if (it.id in ids) it.copy(groupId = group.id) else it }
         }
-        persistGroup(group, ids)
+        if (!dragged.isPrivate) persistGroup(group, ids)
     }
 
     fun tabsInGroup(groupId: String?): List<BrowserTab> =
@@ -1917,7 +1947,8 @@ class BrowserViewModel @Inject constructor(
         viewModelScope.launch {
             _autofillOptions.value = if (_autofillKind.value == "card") {
                 autofillRepository.cards.first().map {
-                    AutofillOption(it.id, "card", "${it.label} •••• ${it.last4}")
+                    val label = if (it.last4.isNotBlank()) "${it.label} •••• ${it.last4}" else it.label
+                    AutofillOption(it.id, "card", label)
                 }
             } else {
                 autofillRepository.addresses.first().map {

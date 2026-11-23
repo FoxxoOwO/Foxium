@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -147,6 +148,7 @@ internal fun SecureDnsSettingsPage(
     var customUriInput by remember(savedCustomUri) { mutableStateOf(savedCustomUri) }
     val normalizedCustom = DohUriValidator.normalize(customUriInput)
     val showCustomError = customUriInput.isNotBlank() && normalizedCustom == null
+    val focusManager = LocalFocusManager.current
 
     SettingsPageScaffold(
         title = stringResource(R.string.settings_doh_title),
@@ -216,6 +218,7 @@ internal fun SecureDnsSettingsPage(
                                         onDone = {
                                             if (normalizedCustom != null) {
                                                 viewModel.setDohCustomUri(normalizedCustom)
+                                                focusManager.clearFocus()
                                             }
                                         },
                                     ),
@@ -225,6 +228,7 @@ internal fun SecureDnsSettingsPage(
                                     onClick = {
                                         if (normalizedCustom != null) {
                                             viewModel.setDohCustomUri(normalizedCustom)
+                                            focusManager.clearFocus()
                                         }
                                     },
                                     enabled = normalizedCustom != null,

@@ -498,7 +498,7 @@ private fun ChromeBrowserContent(
                 focusGuard = toolbarFocusGuard,
                 toolbarShortcut = toolbarShortcut,
                 suggestions = omniboxSuggestions,
-                onNewTab = { viewModel.createTab(false) },
+                onNewTab = { viewModel.createTab(isPrivateTab) },
                 onBookmarks = { sheet = ChromeSheet.Bookmarks },
                 onHistory = { sheet = ChromeSheet.History },
                 onCloseTab = { activeTab?.id?.let(viewModel::closeTab) },
@@ -741,6 +741,10 @@ private fun ChromeBrowserContent(
         )
     }
 
+    LaunchedEffect(castPlayback.connected) {
+        if (!castPlayback.connected) castExpanded = false
+    }
+
     if (castExpanded && castPlayback.connected) {
         CastExpandedController(
             state = castPlayback,
@@ -813,7 +817,7 @@ private fun ChromeBrowserContent(
         ) {
             ContextMenuSheet(
                 menu = menu,
-                onOpen = { viewModel.openContextUrl(it) },
+                onOpen = { viewModel.openContextUrl(it, isPrivate = isPrivateTab) },
                 onOpenPrivate = { viewModel.openContextUrl(it, isPrivate = true) },
                 onDownload = viewModel::downloadContextUrl,
                 onCopy = { url ->
@@ -980,11 +984,14 @@ private fun ChromeBrowserContent(
                     val userAddons = remember(installedAddons) { installedAddons.filterNot { it.builtIn } }
                     AddonsSheet(
                         addons = userAddons,
-                        onPickFile = { addonPicker.launch(arrayOf("*/*")) },
+                        onPickFile = { runCatching { addonPicker.launch(arrayOf("*/*")) } },
                         onInstallUrl = viewModel::installAddonFromUrl,
                         onToggle = viewModel::setAddonEnabled,
                         onUninstall = viewModel::uninstallAddon,
-                        onOpenPopup = viewModel::openAddonPopup,
+                        onOpenPopup = {
+                            sheet = ChromeSheet.None
+                            viewModel.openAddonPopup(it)
+                        },
                     )
                 }
                 ChromeSheet.Userscripts -> {
@@ -995,7 +1002,7 @@ private fun ChromeBrowserContent(
                         onDelete = viewModel::deleteUserscript,
                         onEdit = { editorId = it },
                         onCheckUpdate = viewModel::checkUserscriptUpdates,
-                        onPickFile = { userscriptPicker.launch(arrayOf("*/*")) },
+                        onPickFile = { runCatching { userscriptPicker.launch(arrayOf("*/*")) } },
                         onInstallUrl = viewModel::installUserscript,
                         onInstallSource = viewModel::installUserscriptSource,
                     )
@@ -1007,16 +1014,21 @@ private fun ChromeBrowserContent(
                         bookmarks = bookmarkList,
                         folders = bookmarkFolders,
                         icons = favicons,
-                        onOpen = { viewModel.openUrlInNewTab(it) },
+                        onOpen = {
+                            viewModel.openUrlInNewTab(it)
+                            sheet = ChromeSheet.None
+                        },
                         onCreateFolder = viewModel::createBookmarkFolder,
                         onDeleteFolder = viewModel::deleteBookmarkFolder,
                         onMoveBookmark = viewModel::moveBookmark,
                         onRemoveBookmark = viewModel::removeBookmark,
                         onImportBookmarks = {
-                            bookmarkImportLauncher.launch(arrayOf("text/html", "application/xhtml+xml", "*/*"))
+                            runCatching {
+                                bookmarkImportLauncher.launch(arrayOf("text/html", "application/xhtml+xml", "*/*"))
+                            }
                         },
                         onExportBookmarks = {
-                            bookmarkExportLauncher.launch("foxium-bookmarks.html")
+                            runCatching { bookmarkExportLauncher.launch("foxium-bookmarks.html") }
                         },
                     )
                 }
@@ -1025,7 +1037,10 @@ private fun ChromeBrowserContent(
                     HistorySheet(
                         entries = historyList,
                         icons = favicons,
-                        onOpen = { viewModel.openUrlInNewTab(it) },
+                        onOpen = {
+                            viewModel.openUrlInNewTab(it)
+                            sheet = ChromeSheet.None
+                        },
                     )
                 }
                 ChromeSheet.Recent -> {
@@ -1208,7 +1223,8 @@ private fun NewTabPageHost(
  */
 private fun pinToHomeScreen(context: Context, url: String, title: String) {
     val uri = runCatching { url.toUri() }.getOrNull() ?: return
-    if (uri.scheme != "http" && uri.scheme != "https") return
+    val scheme = uri.scheme?.lowercase()
+    if (scheme != "http" && scheme != "https") return
     val shortcut = ShortcutInfoCompat.Builder(context, "page:${uri.toString().hashCode()}")
         .setShortLabel((title.ifBlank { uri.host.orEmpty() }.ifBlank { "Foxium" }).take(40))
         .setIcon(IconCompat.createWithResource(context, R.drawable.ic_launcher))
@@ -1217,7 +1233,7 @@ private fun pinToHomeScreen(context: Context, url: String, title: String) {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
         .build()
-    ShortcutManagerCompat.requestPinShortcut(context, shortcut, null)
+    runCatching { ShortcutManagerCompat.requestPinShortcut(context, shortcut, null) }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

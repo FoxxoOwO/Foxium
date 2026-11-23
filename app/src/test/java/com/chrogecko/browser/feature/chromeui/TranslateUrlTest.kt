@@ -46,4 +46,13 @@ class TranslateUrlTest {
             ),
         )
     }
+
+    @Test
+    fun normalizesUppercaseSchemeAndHost() {
+        assertEquals(
+            "https://example-com.translate.goog/a?_x_tr_sl=auto&_x_tr_tl=en&_x_tr_hl=en",
+            translateUrl("HTTPS://Example.COM/a", "en"),
+        )
+        assertNull(translateUrl("https://example-com.TRANSLATE.GOOG/x", "cs"))
+    }
 }

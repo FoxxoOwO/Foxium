@@ -17,10 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -510,7 +512,7 @@ internal fun TextExpanderSettingsPage(
             onDismissRequest = { editorOpen = false },
             title = { Text(if (editorId == 0L) stringResource(R.string.settings_add_snippet) else stringResource(R.string.settings_edit_snippet)) },
             text = {
-                Column(Modifier.heightIn(max = 360.dp)) {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                     OutlinedTextField(
                         value = trigger,
                         onValueChange = { trigger = it.filterNot { char -> char.isWhitespace() } },

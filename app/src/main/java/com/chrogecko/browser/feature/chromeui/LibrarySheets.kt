@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -332,12 +333,14 @@ private fun BookmarkRow(
                 bookmark.title.ifBlank { bookmark.url },
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 folderName ?: bookmark.url,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Box {
@@ -375,8 +378,14 @@ fun HistorySheet(
     }
     val todayLabel = stringResource(R.string.history_today)
     val yesterdayLabel = stringResource(R.string.history_yesterday)
-    val sections = remember(filtered, todayLabel, yesterdayLabel) {
-        groupHistoryByDay(filtered, todayLabel = todayLabel, yesterdayLabel = yesterdayLabel)
+    val locale = LocalLocale.current.platformLocale
+    val sections = remember(filtered, todayLabel, yesterdayLabel, locale) {
+        groupHistoryByDay(
+            entries = filtered,
+            todayLabel = todayLabel,
+            yesterdayLabel = yesterdayLabel,
+            locale = locale,
+        )
     }
     Column(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
         SheetHeader(stringResource(R.string.history_title))

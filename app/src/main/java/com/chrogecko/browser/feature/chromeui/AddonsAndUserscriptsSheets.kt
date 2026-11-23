@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -152,7 +153,7 @@ fun UserscriptsSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f).clickable { onEdit(script.id) }) {
-                    Text(script.name, fontWeight = FontWeight.Medium, maxLines = 1)
+                    Text(script.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         stringResource(R.string.userscripts_version_run_at, script.version, script.runAt),
                         style = MaterialTheme.typography.bodySmall,
@@ -247,6 +248,7 @@ private fun UrlInputDialog(
                 placeholder = { Text(hint) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { if (value.isNotBlank()) onConfirm(value.trim()) }),
             )
         },
         confirmButton = {

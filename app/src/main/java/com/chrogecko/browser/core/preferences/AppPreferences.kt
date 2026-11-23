@@ -308,7 +308,7 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
         val cleanLabel = sanitizeField(label)
         context.preferences.edit { prefs ->
             val current = parsePinned(prefs[CUSTOM_SHORTCUTS].orEmpty())
-            if (current.none { it.url == cleanUrl }) {
+            if (current.none { it.url.equals(cleanUrl, ignoreCase = true) }) {
                 prefs[CUSTOM_SHORTCUTS] = encodePinned(current + PinnedShortcut(cleanUrl, cleanLabel))
             }
         }
@@ -455,8 +455,17 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
     }
 
     suspend fun hideDiscoverArticle(url: String) {
+        val clean = url.trim()
+        if (clean.isEmpty()) return
         context.preferences.edit { prefs ->
-            prefs[HIDDEN_DISCOVER] = (prefs[HIDDEN_DISCOVER] ?: emptySet()) + url
+            val current = prefs[HIDDEN_DISCOVER].orEmpty()
+            if (clean in current) return@edit
+            val updated = if (current.size >= MAX_HIDDEN_DISCOVER) {
+                current.drop(current.size - MAX_HIDDEN_DISCOVER + 1).toSet() + clean
+            } else {
+                current + clean
+            }
+            prefs[HIDDEN_DISCOVER] = updated
         }
     }
 
@@ -533,6 +542,7 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
     }
 
     private companion object {
+        const val MAX_HIDDEN_DISCOVER = 500
         val FORCE_DARK = booleanPreferencesKey("force_dark_mode")
         val TRACKING_PROTECTION = booleanPreferencesKey("tracking_protection")
         val HTTPS_ONLY_MODE = stringPreferencesKey("https_only_mode")

@@ -303,7 +303,13 @@ internal fun PasswordsSettingsPage(
             onDismissRequest = { deletingLogin = null },
             title = { Text(stringResource(R.string.settings_delete_password_title)) },
             text = {
-                Text(stringResource(R.string.settings_delete_password_message, entry.username, entry.host))
+                Text(
+                    stringResource(
+                        R.string.settings_delete_password_message,
+                        entry.username.ifBlank { stringResource(R.string.settings_no_username) },
+                        entry.host,
+                    ),
+                )
             },
             confirmButton = {
                 TextButton(
@@ -409,7 +415,12 @@ private fun CardSettingsRow(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("${card.label} •••• ${card.last4}", style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                Text(
+                    if (card.last4.isNotBlank()) "${card.label} •••• ${card.last4}" else card.label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Text(
                     listOf(card.nameOnCard, card.expiry).filter { it.isNotBlank() }.joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,

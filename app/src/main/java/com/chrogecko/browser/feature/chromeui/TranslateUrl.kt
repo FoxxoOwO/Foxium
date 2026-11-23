@@ -9,8 +9,8 @@ import java.net.URI
  */
 fun translateUrl(url: String, targetLanguage: String): String? {
     val uri = runCatching { URI(url) }.getOrNull() ?: return null
-    val host = uri.host ?: return null
-    val scheme = uri.scheme ?: return null
+    val host = uri.host?.lowercase() ?: return null
+    val scheme = uri.scheme?.lowercase() ?: return null
     if (scheme != "http" && scheme != "https") return null
     if (host.endsWith(".translate.goog")) return null
     val language = targetLanguage.substringBefore('-').ifBlank { "en" }

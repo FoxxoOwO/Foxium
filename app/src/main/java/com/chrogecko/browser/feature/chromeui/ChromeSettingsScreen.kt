@@ -84,6 +84,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -826,6 +827,7 @@ private fun SuggestionsSettingsPage(
                     checked = fromBookmarks && enabled,
                     shape = settingsGroupItemShape(1, 3),
                     onCheckedChange = viewModel::setSuggestionsFromBookmarks,
+                    enabled = enabled,
                 )
             }
             item(key = "history") {
@@ -835,6 +837,7 @@ private fun SuggestionsSettingsPage(
                     checked = fromHistory && enabled,
                     shape = settingsGroupItemShape(2, 3),
                     onCheckedChange = viewModel::setSuggestionsFromHistory,
+                    enabled = enabled,
                 )
             }
         }
@@ -1107,6 +1110,7 @@ private fun CustomSearchEngineForm(
     var templateInput by remember(savedTemplate) { mutableStateOf(savedTemplate) }
     val normalizedTemplate = SearchEngines.normalizeCustomTemplate(templateInput)
     val showError = templateInput.isNotBlank() && normalizedTemplate == null
+    val focusManager = LocalFocusManager.current
 
     Surface(
         shape = RoundedCornerShape(20.dp),
@@ -1148,6 +1152,7 @@ private fun CustomSearchEngineForm(
                     onDone = {
                         if (normalizedTemplate != null) {
                             onSave(nameInput, normalizedTemplate)
+                            focusManager.clearFocus()
                         }
                     },
                 ),
@@ -1157,6 +1162,7 @@ private fun CustomSearchEngineForm(
                 onClick = {
                     if (normalizedTemplate != null) {
                         onSave(nameInput, normalizedTemplate)
+                        focusManager.clearFocus()
                     }
                 },
                 enabled = normalizedTemplate != null,
@@ -1500,6 +1506,7 @@ internal fun SettingsToggleRow(
     checked: Boolean,
     shape: RoundedCornerShape,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
     Surface(
         shape = shape,
@@ -1507,22 +1514,26 @@ internal fun SettingsToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .clickable { onCheckedChange(!checked) },
+            .clickable(enabled = enabled) { onCheckedChange(!checked) },
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f),
+                )
                 Text(
                     description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.38f),
                 )
             }
             Spacer(Modifier.width(12.dp))
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
         }
     }
 }

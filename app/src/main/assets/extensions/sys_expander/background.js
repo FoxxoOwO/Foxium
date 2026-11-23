@@ -11,6 +11,7 @@ const STORAGE_KEY = "chrogecko.expander.config";
 let nativePort = null;
 let reconnectTimer = null;
 let reconnectDelay = 1000;
+let configSequence = 0;
 let config = { enabled: true, snippets: [] };
 
 function normalize(value) {
@@ -63,13 +64,14 @@ function sendNative(message) {
 function onNativeMessage(message) {
   if (!message || typeof message !== "object") return;
   if (message.type === "expander/config") {
+    configSequence += 1;
     applyConfig({ enabled: message.enabled, snippets: message.snippets });
   }
 }
 
 async function applyConfig(next) {
   config = normalize(next);
-  await browser.storage.local.set({ [STORAGE_KEY]: config });
+  await browser.storage.local.set({ [STORAGE_KEY]: config }).catch(() => undefined);
   broadcast();
   sendNative({
     type: "expander/status",
@@ -96,9 +98,12 @@ browser.runtime.onMessage.addListener((message) => {
 });
 
 async function restore() {
+  const sequence = configSequence;
   try {
     const stored = await browser.storage.local.get(STORAGE_KEY);
-    if (stored && stored[STORAGE_KEY]) config = normalize(stored[STORAGE_KEY]);
+    if (sequence === configSequence && stored && stored[STORAGE_KEY]) {
+      config = normalize(stored[STORAGE_KEY]);
+    }
   } catch (error) {
     // Storage is best effort: Kotlin pushes the authoritative table right after connecting.
   }

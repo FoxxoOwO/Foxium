@@ -287,13 +287,16 @@ private fun DownloadRowMenu(
 
 private fun shareDownload(context: android.content.Context, download: DownloadEntity) {
     val path = download.localPath ?: return
-    val uri = DownloadStorage.uriFor(context, path)
-    val send = Intent(Intent.ACTION_SEND).apply {
-        type = download.mimeType.ifBlank { "*/*" }
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    if (!path.startsWith("content://") && !java.io.File(path).exists()) return
+    runCatching {
+        val uri = DownloadStorage.uriFor(context, path)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = download.mimeType.ifBlank { "*/*" }
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(send, context.getString(R.string.share_download)))
     }
-    runCatching { context.startActivity(Intent.createChooser(send, context.getString(R.string.share_download))) }
 }
 
 private fun openDownload(
@@ -302,12 +305,13 @@ private fun openDownload(
     chooser: Boolean = false,
 ): Boolean {
     val path = download.localPath ?: return false
-    val uri = DownloadStorage.uriFor(context, path)
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-        setDataAndType(uri, download.mimeType.ifBlank { "*/*" })
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
+    if (!path.startsWith("content://") && !java.io.File(path).exists()) return false
     return runCatching {
+        val uri = DownloadStorage.uriFor(context, path)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, download.mimeType.ifBlank { "*/*" })
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
         context.startActivity(if (chooser) Intent.createChooser(intent, context.getString(R.string.open_with_title)) else intent)
     }.isSuccess
 }
@@ -498,8 +502,9 @@ fun GroupEditDialog(
         },
         confirmButton = {
             TextButton(
+                enabled = title.isNotBlank(),
                 onClick = {
-                    onRename(title)
+                    onRename(title.trim())
                     onRecolor(color)
                     onDismiss()
                 },

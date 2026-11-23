@@ -537,6 +537,8 @@ private fun TabCard(
                 onClick = { if (abs(swipeX.value) < 4f && !dismissed) onClick() },
             ),
     ) {
+        val newTabLabel = stringResource(R.string.new_tab)
+        val cardTitle = displayTabTitle(tab, newTabLabel)
         Column(Modifier.fillMaxSize()) {
             // Chrome places the header bar with favicon, title and close button at the TOP of the card.
             Row(
@@ -561,7 +563,7 @@ private fun TabCard(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            (tab.state.title.ifBlank { tab.state.url.ifBlank { "N" } }).take(1).uppercase(),
+                            cardTitle.take(1).uppercase(),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
@@ -579,7 +581,7 @@ private fun TabCard(
                 }
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    tab.state.title.ifBlank { tab.state.url.ifBlank { stringResource(R.string.new_tab) } },
+                    cardTitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelMedium,
@@ -624,7 +626,7 @@ private fun TabCard(
                             )
                         } else {
                             Text(
-                                (tab.state.title.ifBlank { stringResource(R.string.new_tab) }).take(1).uppercase(),
+                                cardTitle.take(1).uppercase(),
                                 fontSize = 32.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -636,6 +638,16 @@ private fun TabCard(
         }
     }
     }
+}
+
+internal fun displayTabTitle(tab: BrowserTab, newTabLabel: String): String {
+    val url = tab.state.url.trim()
+    val title = tab.state.title.trim()
+    val isBlankTab = url.isEmpty() || url.equals("about:blank", ignoreCase = true)
+    if (isBlankTab && (title.isEmpty() || title.equals("about:blank", ignoreCase = true))) {
+        return newTabLabel
+    }
+    return title.ifBlank { url.ifBlank { newTabLabel } }
 }
 
 /** Chrome's long-press card menu, including the stringResource(R.string.tab_grid_group_with_ellipsis) picker it opens. */
@@ -658,9 +670,10 @@ private fun TabCardMenu(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
+        val newTabLabel = stringResource(R.string.new_tab)
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             Text(
-                if (groupPick) stringResource(R.string.tab_grid_group_with) else tab.state.title.ifBlank { tab.state.url.ifBlank { stringResource(R.string.new_tab) } },
+                if (groupPick) stringResource(R.string.tab_grid_group_with) else displayTabTitle(tab, newTabLabel),
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -672,7 +685,7 @@ private fun TabCardMenu(
                     MenuRow(stringResource(R.string.tab_grid_no_other_tabs)) {}
                 } else {
                     candidates.forEach { candidate ->
-                        MenuRow(candidate.state.title.ifBlank { candidate.state.url }) {
+                        MenuRow(displayTabTitle(candidate, newTabLabel)) {
                             onGroupWith(candidate.id)
                         }
                     }

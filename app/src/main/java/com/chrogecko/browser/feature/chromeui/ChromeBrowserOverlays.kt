@@ -204,6 +204,7 @@ internal fun TabGroupStrip(
                         )
                     }
                 }
+                val newTabLabel = stringResource(R.string.new_tab)
                 tabs.forEach { tab ->
                     val isSelected = tab.id == activeTabId
                     Surface(
@@ -228,7 +229,7 @@ internal fun TabGroupStrip(
                                 )
                             } else {
                                 Text(
-                                    (tab.state.title.ifBlank { tab.state.url }).take(1).uppercase(),
+                                    displayTabTitle(tab, newTabLabel).take(1).uppercase(),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface,
@@ -418,19 +419,33 @@ internal fun NativeSelectionMenu(
     onDismiss: () -> Unit,
 ) {
     val view = LocalView.current
+    val currentOnCopy by rememberUpdatedState(onCopy)
     val currentOnShare by rememberUpdatedState(onShare)
+    val currentOnSelectAll by rememberUpdatedState(onSelectAll)
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
     var actionMode by remember { mutableStateOf<ActionMode?>(null) }
     var callback by remember { mutableStateOf<ActionMode.Callback2?>(null) }
     var selectionRect by remember { mutableStateOf<android.graphics.RectF?>(null) }
+    var finishingProgrammatically by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
-        onDispose { actionMode?.finish() }
+        onDispose {
+            actionMode?.let { existing ->
+                finishingProgrammatically = true
+                existing.finish()
+            }
+            actionMode = null
+            callback = null
+        }
     }
 
     LaunchedEffect(selection) {
         val current = selection
         if (current == null) {
-            actionMode?.finish()
+            actionMode?.let { existing ->
+                finishingProgrammatically = true
+                existing.finish()
+            }
             actionMode = null
             callback = null
             return@LaunchedEffect
@@ -442,13 +457,15 @@ internal fun NativeSelectionMenu(
         }
         val created = object : ActionMode.Callback2() {
             override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-                menu.add(R.string.copy).setOnMenuItemClickListener {
-                    onCopy()
-                    true
+                if (current.canCopy) {
+                    menu.add(R.string.copy).setOnMenuItemClickListener {
+                        currentOnCopy()
+                        true
+                    }
                 }
                 if (current.canSelectAll) {
                     menu.add(R.string.select_all).setOnMenuItemClickListener {
-                        onSelectAll()
+                        currentOnSelectAll()
                         true
                     }
                 }
@@ -462,9 +479,11 @@ internal fun NativeSelectionMenu(
             override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = true
             override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean = false
             override fun onDestroyActionMode(mode: ActionMode) {
+                val wasProgrammatic = finishingProgrammatically
+                finishingProgrammatically = false
                 actionMode = null
                 callback = null
-                onDismiss()
+                if (!wasProgrammatic) currentOnDismiss()
             }
 
             override fun onGetContentRect(mode: ActionMode, view: View, outRect: android.graphics.Rect) {
@@ -478,7 +497,14 @@ internal fun NativeSelectionMenu(
                 }
             }
         }
-        callback = created
-        actionMode = view.startActionMode(created, ActionMode.TYPE_FLOATING)
+        finishingProgrammatically = false
+        val started = view.startActionMode(created, ActionMode.TYPE_FLOATING)
+        if (started != null) {
+            callback = created
+            actionMode = started
+        } else {
+            callback = null
+            actionMode = null
+        }
     }
 }

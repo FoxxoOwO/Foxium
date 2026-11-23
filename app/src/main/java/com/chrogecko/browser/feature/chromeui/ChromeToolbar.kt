@@ -376,17 +376,6 @@ internal fun ChromeToolbar(
                             },
                         )
                         when {
-                            isLoading -> IconButton(
-                                onClick = onStop,
-                                modifier = Modifier.size(36.dp),
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Close,
-                                    contentDescription = stringResource(R.string.stop),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(19.dp),
-                                )
-                            }
                             focused && fieldValue.text.isNotEmpty() -> IconButton(
                                 onClick = {
                                     replaceOnNextEdit = false
@@ -398,6 +387,17 @@ internal fun ChromeToolbar(
                                 Icon(
                                     Icons.Rounded.Close,
                                     contentDescription = stringResource(R.string.cd_clear_url),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(19.dp),
+                                )
+                            }
+                            isLoading -> IconButton(
+                                onClick = onStop,
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.stop),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(19.dp),
                                 )
@@ -531,6 +531,7 @@ internal fun ChromeToolbar(
                                     .fillMaxWidth()
                                     .clickable {
                                         Haptics.tick(hapticView)
+                                        focusManager.clearFocus()
                                         onSuggestionPick(suggestion)
                                     }
                                     .padding(horizontal = 14.dp, vertical = 10.dp),

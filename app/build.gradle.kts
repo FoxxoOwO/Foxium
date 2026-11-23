@@ -19,8 +19,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 36
-        versionCode = 84
-        versionName = "0.78.1"
+        versionCode = 85
+        versionName = "0.78.2"
 
         buildConfigField("boolean", "GECKO_NIGHTLY", "false")
     }
