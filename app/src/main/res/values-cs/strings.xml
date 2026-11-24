@@ -568,7 +568,7 @@
     <string name="cd_remove_rss_source">Odebrat zdroj RSS</string>
     <string name="settings_updates_header">Aktualizace</string>
     <string name="settings_updates_auto_title">Automaticky kontrolovat aktualizace</string>
-    <string name="settings_updates_auto_desc">Při spuštění hledat novější verze Foxia na GitHub Releases</string>
+    <string name="settings_updates_auto_desc">Při spuštění hledat novější verze Foxia na GitHub Releases (max. jednou za hodinu)</string>
     <string name="settings_updates_prereleases_title">Zahrnout experimentální vydání</string>
     <string name="settings_updates_prereleases_desc">Nabízet i experimentální testovací sestavení (pre-release)</string>
     <string name="settings_updates_status_title">Stav aktualizací</string>

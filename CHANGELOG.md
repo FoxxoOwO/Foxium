@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Update checks are throttled to once per hour instead of 12 hours.** A check still runs on app launch when the interval has elapsed, and the update dialog is shown as soon as a newer release is found (a version the user explicitly dismissed stays hidden until a newer tag appears).
+
 ### Added
 
 - **"Search the web" in the long-press context menu.** Both the link/image context sheet and the native text-selection menu now offer a localized *Vyhledat na webu / Search the web* action. It searches the long-pressed text with the active search engine in the current tab; unlike the omnibox, host-like text is searched instead of navigated to.

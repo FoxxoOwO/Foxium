@@ -115,6 +115,8 @@ class AppUpdateManager @Inject constructor(
         if (!force && _state.value is UpdateState.ReadyToInstall) return
         if (!force) {
             if (!preferences.autoUpdateEnabled.first()) return
+            // Checked on app launch, but at most once per hour so repeated launches do not hit
+            // GitHub Releases on every start.
             val lastCheck = preferences.lastUpdateCheckMs.first()
             if (System.currentTimeMillis() - lastCheck < AUTO_CHECK_INTERVAL_MS) return
         } else {
@@ -435,7 +437,7 @@ class AppUpdateManager @Inject constructor(
     companion object {
         const val RELEASES_API_URL =
             "https://api.github.com/repos/FoxxoOwO/Foxium/releases?per_page=10"
-        private const val AUTO_CHECK_INTERVAL_MS = 12L * 60L * 60L * 1000L
+        private const val AUTO_CHECK_INTERVAL_MS = 60L * 60L * 1000L
         private const val CHANNEL_ID = "foxium_updates"
         private const val PROGRESS_NOTIFICATION_ID = 70001
         private const val READY_NOTIFICATION_ID = 70002

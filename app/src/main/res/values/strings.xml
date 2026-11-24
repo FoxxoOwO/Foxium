@@ -552,7 +552,7 @@
     <string name="cd_remove_rss_source">Remove RSS source</string>
     <string name="settings_updates_header">Updates</string>
     <string name="settings_updates_auto_title">Automatic update checks</string>
-    <string name="settings_updates_auto_desc">Check GitHub Releases on startup for newer Foxium builds</string>
+    <string name="settings_updates_auto_desc">Check GitHub Releases on startup, at most once per hour</string>
     <string name="settings_updates_prereleases_title">Include experimental releases</string>
     <string name="settings_updates_prereleases_desc">Offer experimental pre-release builds when available</string>
     <string name="settings_updates_status_title">Update status</string>
