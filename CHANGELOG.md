@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.78.4] - 2026-11-24
+
+### Fixed
+
+- **Two-step back for manually created tabs.** With no page history and no opener tab, the back
+  gesture first returns to the home/new-tab page (replacing and purging history so it cannot walk
+  back into the page); only the next back gesture on that home page exits the browser.
+
+## [0.78.3] - 2026-11-24
+
+### Fixed
+
+- **Back gesture on a tab opened from a link now closes that tab and returns to the originating tab**
+  instead of closing the whole app. Popup/new-tab flows (`target="_blank"`, `window.open`, external
+  links and links opened from lists) now record their opener; `PredictiveBackHandler` checks the
+  opener before falling back to `finish()`. Added pure `TabOpenerPolicy` with 2 unit tests.
+
 ## [0.76.1] - 2026-11-23
 
 Fixed random address bar focusing when scrolling upward on pages (`versionCode = 80`).
