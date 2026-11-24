@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **"Search the web" in the long-press context menu.** Both the link/image context sheet and the native text-selection menu now offer a localized *Vyhledat na webu / Search the web* action. It searches the long-pressed text with the active search engine in the current tab; unlike the omnibox, host-like text is searched instead of navigated to.
+
 ## [0.78.4] - 2026-11-24
 
 ### Fixed

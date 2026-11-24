@@ -63,4 +63,26 @@ class OmniboxUrlNormalizerTest {
             normalizeOmniboxInput("blob:https://example.com/abc", search),
         )
     }
+
+    /** The context-menu "Search the web" action must not turn host-like text into navigation. */
+    @Test
+    fun searchWebAlwaysSearchesHostLikeText() {
+        assertEquals(
+            "https://duckduckgo.com/?q=example.com",
+            buildSearchUrl("example.com", search),
+        )
+        assertEquals(
+            "https://duckduckgo.com/?q=https%3A%2F%2Fexample.com%2Fa",
+            buildSearchUrl(" https://example.com/a ", search),
+        )
+    }
+
+    @Test
+    fun searchWebTrimsAndEncodesQuery() {
+        assertEquals(
+            "https://duckduckgo.com/?q=gecko+view+%26+more",
+            buildSearchUrl("  gecko view & more  ", search),
+        )
+        assertEquals("about:blank", buildSearchUrl("   ", search))
+    }
 }

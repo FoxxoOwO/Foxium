@@ -146,6 +146,7 @@
     <string name="userscript_source">Source</string>
     <string name="context_open_new_tab">Open in new tab</string>
     <string name="context_open_incognito">Open in incognito tab</string>
+    <string name="context_search_web">Search the web</string>
     <string name="context_copy_link">Copy link</string>
     <string name="context_share_link">Share link</string>
     <string name="context_download_link">Download link</string>

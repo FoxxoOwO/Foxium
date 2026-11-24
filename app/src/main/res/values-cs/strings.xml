@@ -146,6 +146,7 @@
     <string name="userscript_source">Zdrojový kód</string>
     <string name="context_open_new_tab">Otevřít na nové kartě</string>
     <string name="context_open_incognito">Otevřít na anonymní kartě</string>
+    <string name="context_search_web">Vyhledat na webu</string>
     <string name="context_copy_link">Kopírovat adresu odkazu</string>
     <string name="context_share_link">Sdílet odkaz</string>
     <string name="context_download_link">Stáhnout odkaz</string>

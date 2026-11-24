@@ -599,6 +599,7 @@ private fun ChromeBrowserContent(
                 NativeSelectionMenu(
                     selection = if (fullscreen || grid) null else selected,
                     onCopy = viewModel::copySelection,
+                    onSearchWeb = { query -> viewModel.searchWeb(query) },
                     onShare = { selected?.let { startSelectedShare(it.text) } },
                     onSelectAll = viewModel::selectAllSelection,
                     onDismiss = viewModel::clearSelection,
@@ -823,6 +824,7 @@ private fun ChromeBrowserContent(
                 menu = menu,
                 onOpen = { viewModel.openContextUrl(it, isPrivate = isPrivateTab) },
                 onOpenPrivate = { viewModel.openContextUrl(it, isPrivate = true) },
+                onSearchWeb = { query -> viewModel.searchWeb(query) },
                 onDownload = viewModel::downloadContextUrl,
                 onCopy = { url ->
                     val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)

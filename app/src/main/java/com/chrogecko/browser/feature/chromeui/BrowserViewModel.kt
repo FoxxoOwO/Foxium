@@ -1203,6 +1203,27 @@ class BrowserViewModel @Inject constructor(
         _omniboxText.value = displayUrl(target)
     }
 
+    /**
+     * Chrome's "Search the web" action: searches the long-pressed text with the active engine in
+     * the current tab. Unlike [navigate], a host-like selection is searched instead of navigated.
+     */
+    fun searchWeb(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return
+        dismissContextMenu()
+        clearSelection()
+        val url = buildSearchUrl(trimmed, activeSearchEngine.value.template)
+        val tab = activeTab.value
+        if (tab == null) {
+            openUrlInNewTab(url)
+            return
+        }
+        clearSuggestions()
+        _omniboxFocused.value = false
+        tab.session.load(url)
+        _omniboxText.value = displayUrl(url)
+    }
+
     fun openContextUrl(url: String, isPrivate: Boolean = false) {
         dismissContextMenu()
         createTab(isPrivate = isPrivate, url = url)

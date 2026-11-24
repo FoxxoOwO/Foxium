@@ -22,4 +22,15 @@ fun normalizeOmniboxInput(input: String, searchTemplate: String = DEFAULT_SEARCH
     return searchTemplate.replace("%s", URLEncoder.encode(trimmed, Charsets.UTF_8.name()))
 }
 
+/**
+ * Always searches, even when the text happens to look like a host or a URL. Chrome's
+ * "Search the web" context-menu action searches the selected text verbatim, while the omnibox
+ * is allowed to reinterpret host-like input as navigation.
+ */
+fun buildSearchUrl(query: String, searchTemplate: String = DEFAULT_SEARCH_TEMPLATE): String {
+    val trimmed = query.trim()
+    if (trimmed.isEmpty()) return "about:blank"
+    return searchTemplate.replace("%s", URLEncoder.encode(trimmed, Charsets.UTF_8.name()))
+}
+
 const val DEFAULT_SEARCH_TEMPLATE = "https://duckduckgo.com/?q=%s"

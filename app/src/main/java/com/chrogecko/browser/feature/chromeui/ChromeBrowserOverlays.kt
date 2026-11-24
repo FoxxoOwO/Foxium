@@ -414,12 +414,15 @@ internal fun PullRefreshIndicator(
 internal fun NativeSelectionMenu(
     selection: SelectionMenu?,
     onCopy: () -> Unit,
+    onSearchWeb: (String) -> Unit,
     onShare: () -> Unit,
     onSelectAll: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val view = LocalView.current
     val currentOnCopy by rememberUpdatedState(onCopy)
+    val currentOnSearchWeb by rememberUpdatedState(onSearchWeb)
+    val currentText by rememberUpdatedState(selection?.text.orEmpty())
     val currentOnShare by rememberUpdatedState(onShare)
     val currentOnSelectAll by rememberUpdatedState(onSelectAll)
     val currentOnDismiss by rememberUpdatedState(onDismiss)
@@ -462,6 +465,10 @@ internal fun NativeSelectionMenu(
                         currentOnCopy()
                         true
                     }
+                }
+                menu.add(R.string.context_search_web).setOnMenuItemClickListener {
+                    currentOnSearchWeb(currentText)
+                    true
                 }
                 if (current.canSelectAll) {
                     menu.add(R.string.select_all).setOnMenuItemClickListener {

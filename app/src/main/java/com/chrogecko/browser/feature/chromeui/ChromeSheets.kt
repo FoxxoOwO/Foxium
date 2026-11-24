@@ -67,6 +67,7 @@ fun ContextMenuSheet(
     menu: ContextMenu,
     onOpen: (String) -> Unit,
     onOpenPrivate: (String) -> Unit,
+    onSearchWeb: (String) -> Unit,
     onDownload: (String) -> Unit,
     onCopy: (String) -> Unit,
     onShare: (String) -> Unit,
@@ -74,6 +75,8 @@ fun ContextMenuSheet(
 ) {
     val link = menu.linkUrl
     val image = menu.imageUrl
+    // Prefer the long-pressed text (Chrome's "Search for ..."), then fall back to the target.
+    val searchText = listOf(menu.text, link, image).firstOrNull { !it.isNullOrBlank() }?.trim()
     Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
         Text(
             text = link ?: image ?: menu.text.orEmpty(),
@@ -83,6 +86,12 @@ fun ContextMenuSheet(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
+        if (searchText != null) {
+            ContextFlatRow(stringResource(R.string.context_search_web)) {
+                onSearchWeb(searchText)
+                onDismiss()
+            }
+        }
         if (link != null) {
             ContextFlatRow(stringResource(R.string.context_open_new_tab)) { onOpen(link); onDismiss() }
             ContextFlatRow(stringResource(R.string.context_open_incognito)) { onOpenPrivate(link); onDismiss() }
