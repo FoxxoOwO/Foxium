@@ -881,8 +881,12 @@ class BrowserViewModel @Inject constructor(
         if (recordUndo) {
             rememberClosed(listOf(tab), localizedString(if (tab.isPrivate) R.string.msg_incognito_tab_closed else R.string.msg_tab_closed))
         }
-        val parentId = openerTabIds.remove(id)
-        openerTabIds.values.removeAll { it == id }
+        val parentId = TabOpenerPolicy.resolve(
+            openerTabIds,
+            id,
+            _tabs.value.mapTo(HashSet()) { it.id },
+        )
+        TabOpenerPolicy.prune(openerTabIds, id)
         _tabs.update { list -> list.filterNot { it.id == id } }
         observers.remove(id)?.cancel()
         iconQueriedUrls.remove(id)
@@ -1157,6 +1161,35 @@ class BrowserViewModel @Inject constructor(
         _omniboxFocused.value = false
     }
 
+    /**
+     * Back on a tab with no opener and no page history goes home first. History is replaced and
+     * purged so the next back gesture exits instead of walking back into the page we just left.
+     */
+    fun goHomeFromBack() {
+        val tab = activeTab.value ?: return
+        runCatching {
+            tab.session.geckoSession.load(
+                GeckoSession.Loader()
+                    .uri("about:blank")
+                    .flags(GeckoSession.LOAD_FLAGS_REPLACE_HISTORY),
+            )
+            tab.session.geckoSession.purgeHistory()
+        }
+        _omniboxText.value = ""
+        _omniboxFocused.value = false
+        // Reflect home immediately so a fast second back gesture exits instead of reloading home.
+        val activeId = tab.id
+        _tabs.update { tabs ->
+            tabs.map { current ->
+                if (current.id == activeId) {
+                    current.copy(state = current.state.copy(url = "about:blank", canGoBack = false))
+                } else {
+                    current
+                }
+            }
+        }
+    }
+
     fun navigate(input: String) {
         val target = normalizeOmniboxInput(input, activeSearchEngine.value.template)
         val tab = activeTab.value ?: return
@@ -1267,9 +1300,26 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
-    fun openUrlInNewTab(url: String) {
-        createTab(isPrivate = activeTab.value?.isPrivate ?: false, url = url)
+    fun openUrlInNewTab(url: String, parentTabId: String? = activeTab.value?.id) {
+        val id = createTab(isPrivate = activeTab.value?.isPrivate ?: false, url = url)
+        if (parentTabId != null && parentTabId != id) openerTabIds[id] = parentTabId
         _gridOpen.value = false
+    }
+
+    /** True when the active tab was opened from another tab that still exists. */
+    fun canReturnToOpenerTab(): Boolean {
+        val id = _activeTabId.value ?: return false
+        return TabOpenerPolicy.resolve(
+            openerTabIds,
+            id,
+            _tabs.value.mapTo(HashSet()) { it.id },
+        ) != null
+    }
+
+    /** Closes the active child tab and reactivates the tab that opened it. */
+    fun closeActiveTabAndReturnToOpener() {
+        val id = _activeTabId.value ?: return
+        closeTab(id, recordUndo = false)
     }
 
     fun reload() = activeTab.value?.session?.reload()
@@ -2029,7 +2079,7 @@ class BrowserViewModel @Inject constructor(
     private fun observeTab(tab: BrowserTab) {
         tab.session.externalResponseHandler = ::handleExternalResponse
         // window.open / target="_blank" becomes a new tab, using an unopened child session.
-        tab.session.popupHandler = { url -> openUrlInNewTab(url) }
+        tab.session.popupHandler = { url -> openUrlInNewTab(url, parentTabId = tab.id) }
         tab.session.newSessionHandler = { uri ->
             createChildSession(tab.isPrivate, tab.groupId, uri, parentTabId = tab.id)
         }

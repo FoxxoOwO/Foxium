@@ -343,6 +343,8 @@ private fun ChromeBrowserContent(
     // A single handler with an explicit priority keeps the back gesture deterministic. Multiple
     // overlapping BackHandlers could let the page-history branch run while an overlay was opening
     // (typically the page-info icon), which looked like "back opened the info sheet".
+    val backTabUrl = activeTab?.state?.url.orEmpty()
+    val backIsHome = backTabUrl.isBlank() || backTabUrl == "about:blank"
     PredictiveBackHandler(enabled = true) { progress ->
         viewModel.setBackGestureActive(true)
         try {
@@ -353,7 +355,9 @@ private fun ChromeBrowserContent(
                 find.visible -> viewModel.closeFind()
                 grid -> viewModel.setGridOpen(false)
                 fullscreen -> viewModel.exitFullscreen()
-                activeTab?.state?.canGoBack == true -> viewModel.goBack()
+                activeTab?.state?.canGoBack == true && !backIsHome -> viewModel.goBack()
+                viewModel.canReturnToOpenerTab() -> viewModel.closeActiveTabAndReturnToOpener()
+                !backIsHome -> viewModel.goHomeFromBack()
                 else -> activity?.finish()
             }
         } catch (_: CancellationException) {
