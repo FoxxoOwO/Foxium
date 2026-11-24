@@ -239,7 +239,7 @@ class EngineSession(
                 }
                 if (!autofillAttached || !autofill.isOwnedDelegate(currentDelegate)) {
                     autofillAttached = true
-                    autofill.attach(session, isPrivate, platformAutofillDelegate)
+                    autofill.attach(session, isPrivate, platformAutofillDelegate, id)
                 }
                 if (!printAttached) {
                     printAttached = true
@@ -828,12 +828,15 @@ class EngineSession(
 
     fun attachView(view: GeckoView) {
         attachedView = WeakReference(view)
-        view.autofillEnabled = true
+        // GeckoView.setAutofillEnabled(true) overwrites the session's autofill delegate with
+        // GeckoView's platform delegate. attachView runs on every recomposition, so only toggle
+        // it once; otherwise the composite delegate (and its captured username) is lost.
+        if (!view.autofillEnabled) view.autofillEnabled = true
         val currentDelegate = geckoSession.autofillDelegate
         if (currentDelegate != null && !autofill.isOwnedDelegate(currentDelegate)) {
             platformAutofillDelegate = currentDelegate
         }
-        autofill.attach(geckoSession, isPrivate, platformAutofillDelegate)
+        autofill.attach(geckoSession, isPrivate, platformAutofillDelegate, id)
     }
 
     fun detachView(view: GeckoView) {

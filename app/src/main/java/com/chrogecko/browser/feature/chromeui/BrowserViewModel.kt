@@ -141,6 +141,12 @@ data class ClosedTab(
     val wasActive: Boolean = false,
 )
 
+/**
+ * Undo snackbar identity. The sequence is part of the state so closing a second tab while the
+ * first snackbar is still visible restarts the UI effect and refreshes the restore snapshot.
+ */
+data class UndoState(val message: String, val seq: Long)
+
 data class PendingUserScript(
     val parsed: ParsedUserScript,
     val source: String,
@@ -193,10 +199,11 @@ class BrowserViewModel @Inject constructor(
     private val _groups = MutableStateFlow<List<TabGroup>>(emptyList())
     val groups: StateFlow<List<TabGroup>> = _groups.asStateFlow()
 
-    private val _undoMessage = MutableStateFlow<String?>(null)
+    private val _undoMessage = MutableStateFlow<UndoState?>(null)
+    private var undoSequence = 0L
 
     /** Non-null while the "Tab closed / Undo" snackbar is relevant. */
-    val undoMessage: StateFlow<String?> = _undoMessage.asStateFlow()
+    val undoMessage: StateFlow<UndoState?> = _undoMessage.asStateFlow()
 
     private var closedTabs: List<ClosedTab> = emptyList()
 
@@ -356,6 +363,8 @@ class BrowserViewModel @Inject constructor(
     private val _discoverItems = MutableStateFlow<List<DiscoverItem>>(emptyList())
     val discoverItems: StateFlow<List<DiscoverItem>> = _discoverItems.asStateFlow()
     private var discoverRequested = false
+    /** Only the newest Discover query may publish results; older network fetches are cancelled. */
+    private var discoverJob: Job? = null
 
     val discoverEnabled: StateFlow<Boolean> = preferences.discoverEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -387,7 +396,8 @@ class BrowserViewModel @Inject constructor(
             _discoverItems.value = emptyList()
             return
         }
-        viewModelScope.launch {
+        discoverJob?.cancel()
+        discoverJob = viewModelScope.launch {
             val items = discoverRepository.suggestions(
                 limit = discoverLimit.value,
                 force = bypassCache,
@@ -559,12 +569,15 @@ class BrowserViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val recentTabs: StateFlow<List<TabEntity>> = tabRepository.recentTabs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    // Omnibox suggestions read these via `.value` while the user is on a web page, where no
+    // History/Bookmarks sheet is composed. Eagerly keeps them fresh instead of freezing the last
+    // cached value after WhileSubscribed's timeout.
     val bookmarkList: StateFlow<List<BookmarkEntity>> = bookmarks.bookmarks
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val bookmarkFolders: StateFlow<List<BookmarkFolderEntity>> = bookmarks.folders
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val historyList: StateFlow<List<HistoryEntity>> = history.observeRecent(100)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val downloads: StateFlow<List<DownloadEntity>> = downloadManager.downloads
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -574,7 +587,17 @@ class BrowserViewModel @Inject constructor(
         appUpdateManager.notificationPermissionRequests,
     )
     val castPlayback: StateFlow<CastPlaybackState> = cast.playback
-    val loginSuggestion: StateFlow<AutofillController.Suggestion?> = autofill.suggestion
+    // The controller keeps a suggestion per tab; only the active tab's may be shown and filled.
+    val loginSuggestion: StateFlow<AutofillController.Suggestion?> = combine(
+        autofill.suggestion,
+        activeTab,
+    ) { suggestion, tab ->
+        if (suggestion != null && tab != null && suggestion.sessionId == tab.session.id) {
+            suggestion
+        } else {
+            null
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val saveLoginRequest: StateFlow<AutofillController.SaveRequest?> = autofill.saveRequest
     val savedLogins: StateFlow<List<SavedLogin>> = loginRepository.logins
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -601,7 +624,8 @@ class BrowserViewModel @Inject constructor(
     /** Per-site rules mirrored from Room so a navigation can apply them synchronously. */
     private var siteRuleCache: Map<String, SiteRuleEntity> = emptyMap()
 
-    private var lastRecordedUrl = ""
+    /** Last recorded URL per tab; the same URL in two tabs is two distinct visits. */
+    private val lastRecordedUrls = mutableMapOf<String, String>()
     private var restoring = false
     private val observers = mutableMapOf<String, Job>()
 
@@ -890,6 +914,7 @@ class BrowserViewModel @Inject constructor(
         _tabs.update { list -> list.filterNot { it.id == id } }
         observers.remove(id)?.cancel()
         iconQueriedUrls.remove(id)
+        lastRecordedUrls.remove(id)
         engine.closeSession(id)
         if (!tab.isPrivate) viewModelScope.launch { tabRepository.closeTab(id) }
         if (!wasActive) return
@@ -941,7 +966,7 @@ class BrowserViewModel @Inject constructor(
         closedTabs = tabs.map {
             ClosedTab(it.state.url, it.isPrivate, it.groupId, it.id == activeId)
         }
-        _undoMessage.value = message
+        _undoMessage.value = UndoState(message, ++undoSequence)
     }
 
     /** Grid card menu: opens a copy of the tab next to the original, keeping its group. */
@@ -1992,11 +2017,11 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
-    fun fillLogin(entry: SavedLogin) = autofill.fill(entry)
+    fun fillLogin(entry: SavedLogin) = autofill.fill(activeTab.value?.session?.id, entry)
 
     fun saveLogin() = autofill.save()
 
-    fun dismissLoginSuggestion() = autofill.dismissSuggestion()
+    fun dismissLoginSuggestion() = autofill.dismissSuggestion(activeTab.value?.session?.id)
 
     fun dismissSaveLogin() = autofill.dismissSave()
 
@@ -2231,9 +2256,9 @@ class BrowserViewModel @Inject constructor(
         _desktopMode.value = tab.session.desktopMode
         val state = tab.state
         if (!tab.isPrivate && !state.isLoading && state.progress >= 100 &&
-            state.url != lastRecordedUrl && state.url != "about:blank"
+            state.url != lastRecordedUrls[tab.id] && state.url != "about:blank"
         ) {
-            lastRecordedUrl = state.url
+            lastRecordedUrls[tab.id] = state.url
             viewModelScope.launch { history.record(state.url, state.title) }
         }
     }

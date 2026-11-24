@@ -25,6 +25,8 @@ let reconnectDelay = 1000;
 let scripts = [];
 /** "tabId:frameId" -> commands registered in that frame, merged per tab for the native menu. */
 const frameMenus = new Map();
+/** tabId -> Map<commandId, frameId[]>; a click only reaches frames that registered that command. */
+const menuTargets = new Map();
 /** scriptId -> { key: value } */
 let valuesByScript = {};
 /** url -> { code, fetchedAt } */
@@ -97,9 +99,14 @@ function onNativeMessage(message) {
   } else if (message.type === "userscripts/menu-command") {
     const tabId = Number(message.tabId);
     if (Number.isFinite(tabId)) {
-      browser.tabs
-        .sendMessage(tabId, { type: "userscripts/menu-command", commandId: message.commandId })
-        .catch(() => {});
+      const commandId = String(message.commandId || "");
+      const registered = menuTargets.get(tabId);
+      const frameIds = (registered && registered.get(commandId)) || [0];
+      for (const frameId of frameIds) {
+        browser.tabs
+          .sendMessage(tabId, { type: "userscripts/menu-command", commandId }, { frameId })
+          .catch(() => {});
+      }
     }
   } else if (message.type === "userscripts/request-status") {
     sendStatus();
@@ -300,6 +307,9 @@ async function buildPlan(url, quick = false) {
       description: script.description,
       runAt: script.runAt,
       grants: script.grants,
+      match: script.match,
+      include: script.include,
+      exclude: script.exclude,
       source: script.source,
       meta: script.meta,
       requires,
@@ -366,11 +376,14 @@ async function handleXhr(details) {
     if (name.toLowerCase() === "cookie") continue;
     headers[name] = String(value);
   }
+  const method = String(details.method || "GET").toUpperCase();
+  // A body is illegal on GET/HEAD, and `undefined` is not a valid fetch body in Gecko either.
+  const hasBody = method !== "GET" && method !== "HEAD" && details.data != null;
   try {
     const response = await fetch(details.url, {
-      method: details.method || "GET",
+      method,
       headers,
-      body: details.data,
+      ...(hasBody ? { body: details.data } : {}),
       credentials: details.anonymous ? "omit" : "include",
       redirect: "follow",
       signal: controller.signal,
@@ -446,21 +459,29 @@ browser.runtime.onMessage.addListener((message, sender) => {
     case "userscripts/menu": {
       const tabId = sender.tab ? sender.tab.id : -1;
       if (tabId < 0) return Promise.resolve({ ok: true });
-      const key = tabId + ":" + (sender.frameId || 0);
+      const frameId = Number.isFinite(sender.frameId) ? sender.frameId : 0;
+      const key = tabId + ":" + frameId;
       const commands = Array.isArray(message.commands) ? message.commands : [];
       if (commands.length) frameMenus.set(key, commands);
       else frameMenus.delete(key);
       const merged = [];
       const seen = new Set();
+      const targets = new Map();
       frameMenus.forEach((list, frameKey) => {
         if (!frameKey.startsWith(tabId + ":")) return;
+        const registeredFrame = Number(frameKey.slice(frameKey.indexOf(":") + 1));
         for (const command of list) {
-          if (command && typeof command.id === "string" && !seen.has(command.id)) {
+          if (!command || typeof command.id !== "string") continue;
+          if (!seen.has(command.id)) {
             seen.add(command.id);
             merged.push(command);
           }
+          const frameIds = targets.get(command.id) || [];
+          if (!frameIds.includes(registeredFrame)) frameIds.push(registeredFrame);
+          targets.set(command.id, frameIds);
         }
       });
+      menuTargets.set(tabId, targets);
       sendNative({
         type: "userscripts/menu",
         tabId,
@@ -480,4 +501,12 @@ browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
   for (const key of Array.from(frameMenus.keys())) {
     if (key.startsWith(tabId + ":")) frameMenus.delete(key);
   }
+  menuTargets.delete(tabId);
+});
+
+browser.tabs.onRemoved.addListener((tabId) => {
+  for (const key of Array.from(frameMenus.keys())) {
+    if (key.startsWith(tabId + ":")) frameMenus.delete(key);
+  }
+  menuTargets.delete(tabId);
 });

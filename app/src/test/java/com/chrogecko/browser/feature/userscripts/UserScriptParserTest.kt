@@ -1,6 +1,8 @@
 package com.chrogecko.browser.feature.userscripts
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -42,6 +44,17 @@ class UserScriptParserTest {
         assertEquals("https://example.com/logo.png", parsed.resources["logo"])
         assertEquals("https://example.com/script.user.js", parsed.updateUrl)
         assertTrue(parsed.source.contains("console.log"))
+    }
+
+    /** GM_info.scriptMetaStr is built from this block; it must survive parsing verbatim. */
+    @Test
+    fun `metadata block is preserved for GM_info`() {
+        val block = UserScriptParser.metadataBlock(sample)
+        assertNotNull(block)
+        assertTrue(block!!.contains("==UserScript=="))
+        assertTrue(block.contains("@name         Example Enhancer"))
+        assertTrue(block.contains("==/UserScript=="))
+        assertFalse(block.contains("console.log"))
     }
 
     @Test

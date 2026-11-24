@@ -449,6 +449,7 @@
     <string name="settings_suggestions_history">Historie</string>
     <string name="settings_suggestions_history_desc">Zahrnout do návrhů odpovídající historii prohlížení</string>
     <string name="msg_invalid_url">Neplatná adresa URL</string>
+    <string name="msg_download_empty_response">Server vrátil prázdnou odpověď</string>
     <string name="pull_refresh_hint">Potažte pro obnovení</string>
     <string name="pull_refresh_release">Pusťte pro obnovení</string>
     <string name="discover_source_best">Nejlepší</string>

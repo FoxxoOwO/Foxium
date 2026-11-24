@@ -5,6 +5,7 @@ import com.chrogecko.browser.core.database.repository.LoginRepository
 import com.chrogecko.browser.core.database.repository.SavedLogin
 import com.chrogecko.browser.core.preferences.AppPreferences
 import java.lang.ref.WeakReference
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +36,8 @@ class AutofillController @Inject constructor(
 
     /** Logins matching the focused login form. */
     data class Suggestion(
+        /** EngineSession id this suggestion belongs to; the UI only shows it on that tab. */
+        val sessionId: String,
         val host: String,
         val entries: List<SavedLogin>,
         val usernameId: Int?,
@@ -56,8 +59,13 @@ class AutofillController @Inject constructor(
     @Volatile
     private var builtInPasswordSaveEnabled = true
 
-    private var suggestionSession: WeakReference<GeckoSession>? = null
-    private var focusJob: Job? = null
+    // Autofill focus is inherently per-tab. A singleton's single job/session pair lets a focus
+    // event in tab B steal tab A's in-flight lookup and even fill tab B's node ids into tab A.
+    private val focusJobs = ConcurrentHashMap<String, Job>()
+    private val suggestionsBySession = ConcurrentHashMap<String, Suggestion>()
+    private val sessions = ConcurrentHashMap<String, WeakReference<GeckoSession>>()
+    @Volatile
+    private var latestSessionId: String? = null
 
     init {
         scope.launch {
@@ -74,7 +82,9 @@ class AutofillController @Inject constructor(
         geckoSession: GeckoSession,
         isPrivate: Boolean = false,
         platformDelegate: Autofill.Delegate? = null,
+        sessionId: String = "",
     ) {
+        sessions[sessionId] = WeakReference(geckoSession)
         val current = geckoSession.autofillDelegate
         val resolvedPlatform = platformDelegate
             ?: (current as? CompositeAutofillDelegate)?.platform
@@ -86,7 +96,7 @@ class AutofillController @Inject constructor(
             return
         }
         val internal = (current as? CompositeAutofillDelegate)?.internal
-            ?: InternalAutofillDelegate(isPrivate)
+            ?: InternalAutofillDelegate(sessionId, isPrivate)
         geckoSession.autofillDelegate = CompositeAutofillDelegate(
             platform = resolvedPlatform,
             internal = internal,
@@ -96,32 +106,38 @@ class AutofillController @Inject constructor(
     }
 
     fun detach(geckoSession: GeckoSession) {
-        if (suggestionSession?.get() === geckoSession) {
-            focusJob?.cancel()
-            focusJob = null
-            suggestionSession = null
-            _suggestion.value = null
+        val sessionId = sessions.entries.firstOrNull { it.value.get() === geckoSession }?.key
+        if (sessionId != null) {
+            clearSuggestion(sessionId)
+            sessions.remove(sessionId)
         }
-        if (geckoSession.autofillDelegate is CompositeAutofillDelegate) {
-            geckoSession.autofillDelegate = null
+        val delegate = geckoSession.autofillDelegate
+        if (delegate is CompositeAutofillDelegate) {
+            // detach() must undo only what attach() installed. Nulling the delegate would also
+            // discard Android's platform autofill for a session that is merely being detached.
+            geckoSession.autofillDelegate = delegate.platform
         }
     }
 
-    /** Fills the picked login into the focused form. */
-    fun fill(entry: SavedLogin) {
-        val geckoSession = suggestionSession?.get() ?: return
-        val fields = _suggestion.value ?: return
+    /** Fills the picked login into the focused form of [sessionId] and no other tab. */
+    fun fill(sessionId: String?, entry: SavedLogin) {
+        if (sessionId.isNullOrBlank()) return
+        val geckoSession = sessions[sessionId]?.get() ?: return
+        val fields = suggestionsBySession[sessionId] ?: return
         if (fields.usernameId == null && fields.passwordId == null) return
         scope.launch {
             try {
                 val password = logins.password(entry.id) ?: return@launch
+                // Re-check under the single-threaded scope: another tab may have taken focus
+                // between the tap and the database read.
+                val current = suggestionsBySession[sessionId] ?: return@launch
+                if (latestSessionId != sessionId) return@launch
                 val values = SparseArray<CharSequence>()
-                fields.usernameId?.let { values.put(it, entry.username) }
-                fields.passwordId?.let { values.put(it, password) }
+                current.usernameId?.let { values.put(it, entry.username) }
+                current.passwordId?.let { values.put(it, password) }
                 runCatching { geckoSession.autofillSession.autofill(values) }
             } finally {
-                suggestionSession = null
-                _suggestion.value = null
+                clearSuggestion(sessionId)
             }
         }
     }
@@ -132,9 +148,17 @@ class AutofillController @Inject constructor(
         scope.launch { logins.save(request.host, request.username, request.password) }
     }
 
-    fun dismissSuggestion() {
-        suggestionSession = null
-        _suggestion.value = null
+    fun dismissSuggestion(sessionId: String?) {
+        if (!sessionId.isNullOrBlank()) clearSuggestion(sessionId)
+    }
+
+    private fun clearSuggestion(sessionId: String) {
+        focusJobs.remove(sessionId)?.cancel()
+        suggestionsBySession.remove(sessionId)
+        if (latestSessionId == sessionId) {
+            latestSessionId = null
+            _suggestion.value = null
+        }
     }
 
     fun dismissSave() {
@@ -250,6 +274,7 @@ class AutofillController @Inject constructor(
     }
 
     private inner class InternalAutofillDelegate(
+        private val sessionId: String,
         private val isPrivate: Boolean,
     ) : Autofill.Delegate {
         private var focusedUsername: String = ""
@@ -257,8 +282,8 @@ class AutofillController @Inject constructor(
         override fun onNodeFocus(session: GeckoSession, node: Autofill.Node, data: Autofill.NodeData) {
             if (!node.isLoginField()) return
             val host = hostOf(node.domain) ?: return
-            focusJob?.cancel()
-            focusJob = scope.launch {
+            focusJobs[sessionId]?.cancel()
+            val job = scope.launch {
                 val entries = logins.forHost(host)
                 val fields = if (entries.isEmpty()) {
                     null
@@ -266,13 +291,21 @@ class AutofillController @Inject constructor(
                     runCatching { loginFields(session) }.getOrNull()
                 }
                 if (entries.isEmpty() || fields == null) {
-                    suggestionSession = null
-                    _suggestion.value = null
+                    clearSuggestion(sessionId)
                 } else {
-                    suggestionSession = WeakReference(session)
-                    _suggestion.value = Suggestion(host, entries, fields.first, fields.second)
+                    val suggestion = Suggestion(
+                        sessionId = sessionId,
+                        host = host,
+                        entries = entries,
+                        usernameId = fields.first,
+                        passwordId = fields.second,
+                    )
+                    suggestionsBySession[sessionId] = suggestion
+                    latestSessionId = sessionId
+                    _suggestion.value = suggestion
                 }
             }
+            focusJobs[sessionId] = job
         }
 
         override fun onNodeBlur(session: GeckoSession, node: Autofill.Node, data: Autofill.NodeData) {
@@ -311,10 +344,7 @@ class AutofillController @Inject constructor(
 
         override fun onSessionCancel(session: GeckoSession) {
             focusedUsername = ""
-            if (suggestionSession?.get() === session) {
-                suggestionSession = null
-                _suggestion.value = null
-            }
+            clearSuggestion(sessionId)
         }
     }
 

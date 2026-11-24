@@ -82,7 +82,21 @@ class CastManager @Inject constructor(
     fun start() {
         if (!started.compareAndSet(false, true)) return
         scope.launch { bridge.events.collect(::handleEvent) }
+        // StateFlow replays the current port state, so this also recovers from the race where the
+        // sniffer sends `sniffer/ready` before its message delegate is registered.
+        scope.launch {
+            bridge.connectedExtensions.collect { connected ->
+                if (SystemExtensionIds.MEDIASNIFFER in connected) requestMediaFlush()
+            }
+        }
         scope.launch { initializeCast() }
+    }
+
+    private fun requestMediaFlush() {
+        bridge.post(
+            SystemExtensionIds.MEDIASNIFFER,
+            org.json.JSONObject().put("type", "media/request"),
+        )
     }
 
     fun clearMedia(tabId: Long) {
@@ -95,51 +109,65 @@ class CastManager @Inject constructor(
         val remoteClient = castSession.remoteMediaClient
             ?: return@withContext Result.failure(CastException("Cast session is not ready"))
 
-        val proxiedUrl = withContext(Dispatchers.IO) { proxy.publish(media) }
-        val contentType = when {
-            media.isHls -> "application/x-mpegURL"
-            media.isDash -> "application/dash+xml"
-            media.mime.isNotBlank() -> media.mime
-            else -> "video/mp4"
-        }
+        // A session can exist before its media client is ever bound (initializeCast races with
+        // the cast framework). Bind it here so play/pause/seek and status updates work even when
+        // the user starts casting before the session callbacks arrive.
+        bindSession(castSession)
 
-        val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
-            putString(MediaMetadata.KEY_TITLE, media.title.ifBlank { media.pageTitle })
-            media.poster?.let { poster ->
-                runCatching { addImage(WebImage(poster.toUri())) }
+        // `cast` returns Result, so no failure may escape as a thrown exception: the proxy and
+        // MediaInfo builder can both throw, and an uncaught error would kill the caller's coroutine.
+        runCatching {
+            val proxiedUrl = withContext(Dispatchers.IO) { proxy.publish(media) }
+            val contentType = when {
+                media.isHls -> "application/x-mpegURL"
+                media.isDash -> "application/dash+xml"
+                media.mime.isNotBlank() -> media.mime
+                else -> "video/mp4"
             }
-        }
-        val info = MediaInfo.Builder(proxiedUrl)
-            .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-            .setContentType(contentType)
-            .setMetadata(metadata)
-            .apply { if (media.durationMs > 0) setStreamDuration(media.durationMs) }
-            .build()
 
-        _playback.update { current ->
-            current.copy(
-                connected = true,
-                deviceName = castSession.castDevice?.friendlyName,
-                mediaTitle = media.title,
-                mediaUrl = proxiedUrl,
-                durationMs = media.durationMs,
-                positionMs = 0L,
-            )
-        }
+            val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
+                putString(MediaMetadata.KEY_TITLE, media.title.ifBlank { media.pageTitle })
+                media.poster?.let { poster ->
+                    runCatching { addImage(WebImage(poster.toUri())) }
+                }
+            }
+            val info = MediaInfo.Builder(proxiedUrl)
+                .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+                .setContentType(contentType)
+                .setMetadata(metadata)
+                .apply { if (media.durationMs > 0) setStreamDuration(media.durationMs) }
+                .build()
 
-        val request = MediaLoadRequestData.Builder()
-            .setMediaInfo(info)
-            .setAutoplay(true)
-            .build()
-        val loaded = awaitLoad(remoteClient.load(request))
-        if (loaded) {
-            updatePlayback()
-            Result.success(Unit)
-        } else {
-            val message = "Chromecast rejected ${contentType}"
+            _playback.update { current ->
+                current.copy(
+                    connected = true,
+                    deviceName = castSession.castDevice?.friendlyName,
+                    mediaTitle = media.title,
+                    mediaUrl = proxiedUrl,
+                    durationMs = media.durationMs,
+                    positionMs = 0L,
+                )
+            }
+
+            val request = MediaLoadRequestData.Builder()
+                .setMediaInfo(info)
+                .setAutoplay(true)
+                .build()
+            val loaded = awaitLoad(remoteClient.load(request))
+            if (loaded) {
+                updatePlayback()
+                Result.success(Unit)
+            } else {
+                val message = "Chromecast rejected ${contentType}"
+                _errors.tryEmit(message)
+                updatePlayback() // roll back the optimistic "connected" state
+                Result.failure(CastException(message))
+            }
+        }.getOrElse { error ->
+            val message = error.message?.takeIf { it.isNotBlank() } ?: "Cast failed"
             _errors.tryEmit(message)
-            updatePlayback() // roll back the optimistic "connected" state
-            Result.failure(CastException(message))
+            updatePlayback()
+            Result.failure(error)
         }
     }
 
@@ -247,6 +275,7 @@ class CastManager @Inject constructor(
     private fun handleEvent(event: com.chrogecko.browser.core.messaging.NativeEvent) {
         if (event.extensionId != SystemExtensionIds.MEDIASNIFFER) return
         when (event.type) {
+            "sniffer/ready" -> requestMediaFlush()
             "media/snapshot" -> {
                 val tabId = event.payload.optLong("tabId", -1L)
                 if (tabId < 0) return

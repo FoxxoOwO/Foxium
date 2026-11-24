@@ -35,7 +35,8 @@ class NativeMessagingBridge @Inject constructor() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ports = ConcurrentHashMap<String, WebExtension.Port>()
-    private val registered = ConcurrentHashMap.newKeySet<String>()
+    /** One delegate per extension: re-registering must replace, never stack, port listeners. */
+    private val delegates = ConcurrentHashMap<String, WebExtension.MessageDelegate>()
 
     private val _events = MutableSharedFlow<NativeEvent>(
         extraBufferCapacity = 64,
@@ -47,18 +48,33 @@ class NativeMessagingBridge @Inject constructor() {
     val connectedExtensions: StateFlow<Set<String>> = _connectedExtensions.asStateFlow()
 
     fun register(extension: WebExtension, force: Boolean = false) {
-        if (!force && !registered.add(extension.id)) return
-        registered.add(extension.id)
         // setMessageDelegate is @UiThread but GeckoResult callbacks land elsewhere.
         mainHandler.post {
-            extension.setMessageDelegate(PortMessageDelegate(extension.id), APPLICATION_NAME)
+            val previousDelegate = delegates[extension.id]
+            if (!force && previousDelegate != null) return@post
+            if (force) {
+                // Replacing a delegate does not disconnect ports created by the old one.
+                ports.remove(extension.id)?.let { old ->
+                    runCatching { old.setDelegate(null) }
+                    runCatching { old.disconnect() }
+                }
+                if (previousDelegate != null) {
+                    runCatching { extension.setMessageDelegate(null, APPLICATION_NAME) }
+                }
+                _connectedExtensions.update { it - extension.id }
+            }
+            val delegate = PortMessageDelegate(extension.id)
+            delegates[extension.id] = delegate
+            extension.setMessageDelegate(delegate, APPLICATION_NAME)
         }
     }
 
     fun post(extensionId: String, payload: JSONObject): Boolean {
-        val port = ports[extensionId] ?: return false
         Log.d(TAG, "app -> $extensionId ${payload.optString("type")}")
         fun deliver(): Boolean {
+            // Resolve the port on the main thread: a captured reference may already have been
+            // displaced by a reconnect, and Gecko silently drops posts to a disconnected port.
+            val port = ports[extensionId] ?: return false
             val ok = runCatching { port.postMessage(payload); true }.getOrDefault(false)
             if (!ok) {
                 ports.remove(extensionId, port)
@@ -68,10 +84,12 @@ class NativeMessagingBridge @Inject constructor() {
             }
             return ok
         }
-        // A background caller cannot wait for the main-thread delivery, so "true" means queued.
+        // A background caller cannot wait for the main-thread delivery, so "true" only means a
+        // live port existed when the message was queued.
         return if (Looper.myLooper() == Looper.getMainLooper()) deliver() else {
-            mainHandler.post { deliver() }
-            true
+            val queued = ports.containsKey(extensionId)
+            if (queued) mainHandler.post { deliver() }
+            queued
         }
     }
 
@@ -82,7 +100,13 @@ class NativeMessagingBridge @Inject constructor() {
     ) : WebExtension.MessageDelegate {
 
         override fun onConnect(port: WebExtension.Port) {
-            ports[extensionId] = port
+            val previous = ports.put(extensionId, port)
+            if (previous != null && previous !== port) {
+                // A background-script restart opens a new port. Keep one live channel per
+                // extension or both ports keep emitting the same events into the bridge.
+                runCatching { previous.setDelegate(null) }
+                runCatching { previous.disconnect() }
+            }
             Log.i(TAG, "port connected: $extensionId")
             _connectedExtensions.update { it + extensionId }
             port.setDelegate(object : WebExtension.PortDelegate {

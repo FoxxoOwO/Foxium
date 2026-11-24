@@ -74,7 +74,8 @@
     return true;
   }
 
-  // Commands registered in iframes are merged by the background; a click reaches every frame.
+  // Commands registered in iframes are merged by the background; a click is routed only to the
+  // frames that actually registered that command id.
 
   function addStyle(css) {
     const style = document.createElement("style");

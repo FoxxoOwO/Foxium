@@ -213,6 +213,7 @@ private fun ChromeBrowserContent(
     var omniboxFocusRequest by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val resources = LocalResources.current
+    val focusManager = LocalFocusManager.current
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val androidAutofillEnabled by viewModel.androidAutofillEnabled.collectAsStateWithLifecycle()
     // An intent handed over by another app opens in its own tab, as Chrome does.
@@ -250,6 +251,9 @@ private fun ChromeBrowserContent(
         result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             ?.firstOrNull()
             ?.let {
+                // Voice input bypasses the toolbar's onGo handler, so clear the real Compose
+                // focus here as well; submit() only updates the ViewModel's focus state.
+                focusManager.clearFocus()
                 viewModel.onOmniboxChange(it)
                 viewModel.submit()
             }
@@ -331,7 +335,7 @@ private fun ChromeBrowserContent(
     LaunchedEffect(undoMessage) {
         val message = undoMessage ?: return@LaunchedEffect
         val result = snackbar.showSnackbar(
-            message = message,
+            message = message.message,
             actionLabel = resources.getString(R.string.undo),
             // Long, not Short: the action has to stay tappable while the user reacts.
             duration = SnackbarDuration.Long,
@@ -345,19 +349,27 @@ private fun ChromeBrowserContent(
     // (typically the page-info icon), which looked like "back opened the info sheet".
     val backTabUrl = activeTab?.state?.url.orEmpty()
     val backIsHome = backTabUrl.isBlank() || backTabUrl == "about:blank"
+    // A back gesture can last seconds; the completion branch must see the state at release time,
+    // not the composition snapshot from when the gesture started.
+    val currentSheet by rememberUpdatedState(sheet)
+    val currentFindVisible by rememberUpdatedState(find.visible)
+    val currentGrid by rememberUpdatedState(grid)
+    val currentFullscreen by rememberUpdatedState(fullscreen)
+    val currentBackIsHome by rememberUpdatedState(backIsHome)
+    val currentCanGoBack by rememberUpdatedState(activeTab?.state?.canGoBack == true)
     PredictiveBackHandler(enabled = true) { progress ->
         viewModel.setBackGestureActive(true)
         try {
             progress.collect { }
             when {
                 viewModel.contextMenu.value != null -> viewModel.dismissContextMenu()
-                sheet != ChromeSheet.None -> sheet = ChromeSheet.None
-                find.visible -> viewModel.closeFind()
-                grid -> viewModel.setGridOpen(false)
-                fullscreen -> viewModel.exitFullscreen()
-                activeTab?.state?.canGoBack == true && !backIsHome -> viewModel.goBack()
+                currentSheet != ChromeSheet.None -> sheet = ChromeSheet.None
+                currentFindVisible -> viewModel.closeFind()
+                currentGrid -> viewModel.setGridOpen(false)
+                currentFullscreen -> viewModel.exitFullscreen()
+                currentCanGoBack && !currentBackIsHome -> viewModel.goBack()
                 viewModel.canReturnToOpenerTab() -> viewModel.closeActiveTabAndReturnToOpener()
-                !backIsHome -> viewModel.goHomeFromBack()
+                !currentBackIsHome -> viewModel.goHomeFromBack()
                 else -> activity?.finish()
             }
         } catch (_: CancellationException) {
@@ -406,7 +418,6 @@ private fun ChromeBrowserContent(
     val isNewTab = currentUrl.isBlank() || currentUrl == "about:blank"
     val isPrivateTab = activeTab?.isPrivate == true
     val hideToolbar = toolbarAutoHide && toolbarHidden && !fullscreen && !focused && !isNewTab && !grid
-    val focusManager = LocalFocusManager.current
     val currentFocused by rememberUpdatedState(focused)
     var toolbarFocusGuard by remember { mutableStateOf(false) }
     var focusGuardToken by remember { mutableIntStateOf(0) }

@@ -272,7 +272,10 @@ class UserScriptFeature @Inject constructor(
                     .put("grants", JSONArray(script.grants))
                     .put("requires", JSONArray(script.requires))
                     .put("resources", JSONObject(script.resources as Map<*, *>))
-                    .put("source", script.source),
+                    .put("source", script.source)
+                    // GM_info.scriptMetaStr must contain the original metadata block; deriving it
+                    // from source avoids a Room schema change for a value we already store.
+                    .put("meta", UserScriptParser.metadataBlock(script.source).orEmpty()),
             )
         }
         val payload = JSONObject()

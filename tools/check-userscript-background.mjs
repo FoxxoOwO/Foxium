@@ -9,6 +9,7 @@ const storage = {};
 let runtimeListener;
 let portListener;
 let tabUpdatedListener;
+let tabRemovedListener;
 
 const port = {
   postMessage: (message) => nativeMessages.push(message),
@@ -34,12 +35,17 @@ const browser = {
     },
   },
   tabs: {
-    sendMessage: async (tabId, message) => {
-      tabMessages.push({ tabId, message });
+    sendMessage: async (tabId, message, options) => {
+      tabMessages.push({ tabId, message, options });
     },
     onUpdated: {
       addListener: (listener) => {
         tabUpdatedListener = listener;
+      },
+    },
+    onRemoved: {
+      addListener: (listener) => {
+        tabRemovedListener = listener;
       },
     },
   },
@@ -51,6 +57,17 @@ const fetchStub = async (url, options) => {
       ok: true,
       headers: new Headers({ "content-type": "image/svg+xml" }),
       arrayBuffer: async () => new TextEncoder().encode("<svg/>").buffer,
+    };
+  }
+  if (String(url).includes("get-with-data")) {
+    // A GET request with `data` must still be issued: fetch() rejects a body on GET/HEAD.
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      url: String(url),
+      headers: new Headers(),
+      arrayBuffer: async () => new ArrayBuffer(0),
     };
   }
   return fetch(url, options);
@@ -93,6 +110,7 @@ portListener({
       exclude: ["https://example.com/private/*"],
       runAt: "document-idle",
       source: "console.log('example');",
+      meta: "// ==UserScript==\n// @name Example Enhancer\n// ==/UserScript==",
       resources: { logo: "https://example.com/logo.svg" },
       enabled: true,
     },
@@ -111,6 +129,11 @@ assert.equal(plan.scripts.length, 1);
 assert.equal(plan.scripts[0].name, "Example enhancer");
 assert.equal(plan.scripts[0].runAt, "document-idle");
 assert.match(plan.scripts[0].source, /example/);
+// GM_info must expose match/include/exclude and the original metadata block.
+assert.deepEqual(Array.from(plan.scripts[0].match), ["https://example.com/*"]);
+assert.deepEqual(Array.from(plan.scripts[0].include), []);
+assert.deepEqual(Array.from(plan.scripts[0].exclude), ["https://example.com/private/*"]);
+assert.match(plan.scripts[0].meta, /==UserScript==/);
 assert.equal(plan.scripts[0].resources.logo.text, "<svg/>");
 assert.match(plan.scripts[0].resources.logo.dataUrl, /^data:image\/svg\+xml;base64,/);
 
@@ -138,15 +161,35 @@ assert.equal(menuMessage.commands[0].title, "Run");
 portListener({ type: "userscripts/menu-command", tabId: 7, commandId: "1:1" });
 assert.equal(tabMessages.at(-1).message.type, "userscripts/menu-command");
 assert.equal(tabMessages.at(-1).message.commandId, "1:1");
+assert.equal(tabMessages.at(-1).options.frameId, 0);
+
+// A duplicate registration in an iframe stays one menu entry, but a click reaches only the
+// frames that actually registered it (and no unrelated frames).
+await runtimeListener(
+  { type: "userscripts/menu", url: "https://example.com/page", commands: [{ id: "1:1", title: "Run" }] },
+  { tab: { id: 7, url: "https://example.com/page" }, frameId: 3 },
+);
+const mergedMenu = nativeMessages.filter((m) => m.type === "userscripts/menu").at(-1);
+assert.equal(mergedMenu.commands.length, 1);
+const beforeClick = tabMessages.length;
+portListener({ type: "userscripts/menu-command", tabId: 7, commandId: "1:1" });
+assert.equal(tabMessages.length - beforeClick, 2);
+assert.deepEqual(
+  tabMessages.slice(beforeClick).map((m) => m.options.frameId).sort((a, b) => a - b),
+  [0, 3],
+);
 
 assert.ok(tabUpdatedListener, "tabs.onUpdated was not registered");
 tabUpdatedListener(7, { status: "loading" });
-await runtimeListener(
-  { type: "userscripts/menu", url: "https://example.com/other", commands: [] },
-  { tab: { id: 7, url: "https://example.com/other" } },
-);
+for (const frameId of [0, 3]) {
+  await runtimeListener(
+    { type: "userscripts/menu", url: "https://example.com/other", commands: [] },
+    { tab: { id: 7, url: "https://example.com/other" }, frameId },
+  );
+}
 const clearedMenu = nativeMessages.filter((message) => message.type === "userscripts/menu").at(-1);
 assert.equal(clearedMenu.commands.length, 0);
+assert.ok(tabRemovedListener, "tabs.onRemoved was not registered");
 
 const blockedXhr = await runtimeListener({
   type: "gm/xhr",
@@ -159,6 +202,12 @@ const badSchemeXhr = await runtimeListener({
   details: { url: "file:///etc/passwd" },
 });
 assert.equal(badSchemeXhr.ok, false);
+
+const getWithData = await runtimeListener({
+  type: "gm/xhr",
+  details: { url: "https://example.com/get-with-data", method: "GET", data: "ignored" },
+});
+assert.equal(getWithData.ok, true, "a GET with data must not fail with a body error");
 
 assert.ok(
   nativeMessages.some((message) => message.type === "userscripts/status" && message.count === 2),

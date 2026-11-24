@@ -8,6 +8,15 @@ All notable changes to this project are documented in this file.
 
 - **"Search the web" in the long-press context menu.** Both the link/image context sheet and the native text-selection menu now offer a localized *Vyhledat na webu / Search the web* action. It searches the long-pressed text with the active search engine in the current tab; unlike the omnibox, host-like text is searched instead of navigated to.
 
+### Fixed
+
+- **Cast.** `cast()` now returns failures as `Result` instead of letting proxy/MediaInfo exceptions kill the caller, and binds the `RemoteMediaClient` so Play/Pause/Seek and live status work even when casting starts before the session callbacks. Media detected before the native port connects is re-flushed on `sniffer/ready` and on port reconnect.
+- **Userscripts.** Menu commands are dispatched only to the frames that registered them (instead of running once per frame); `GM_info` now carries `matches`/`includes`/`excludes` and the full `scriptMetaStr`; `GM_xmlhttpRequest` no longer fails when `data` is set with the default GET method.
+- **Autofill.** Focus jobs, suggestions and session references are keyed per tab, so credentials from one tab can never be filled into another; detaching a view no longer discards Android's platform autofill delegate, and repeated recompositions no longer replace the composite delegate mid-edit.
+- **Native messaging.** Delegate re-registration replaces instead of stacking listeners, a reconnecting extension port displaces the old one, and `post()` resolves the port on the main thread instead of posting to a stale reference.
+- **Browser UI.** Omnibox history/bookmark suggestions stay fresh while browsing; the Undo snackbar now refreshes when a second tab is closed; Discover fetches cancel older overlapping requests; back gestures read live UI state; revisiting the same URL in a different tab is recorded in history; voice search clears real keyboard focus.
+- **Downloads.** A successful HTTP response with no body now creates a visible failed row instead of silently doing nothing.
+
 ## [0.78.4] - 2026-11-24
 
 ### Fixed

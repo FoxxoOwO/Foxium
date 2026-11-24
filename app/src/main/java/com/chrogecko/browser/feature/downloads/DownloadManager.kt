@@ -77,7 +77,16 @@ class DownloadManager @Inject constructor(
             .orEmpty().ifBlank { "application/octet-stream" }
         val fileName = fileName(response)
         val declaredSize = (header(response, "content-length")?.toLongOrNull() ?: 0L).coerceAtLeast(0L)
-        val body = response.body ?: return
+        val body = response.body
+        if (body == null) {
+            // Keep a visible failed row: silently returning makes "Download link" look broken.
+            val uri = response.uri
+            scope.launch {
+                val id = repository.start(uri, fileName, mime)
+                repository.failed(id, context.getString(R.string.msg_download_empty_response))
+            }
+            return
+        }
         scope.launch {
             streamToFile(
                 uri = response.uri,
@@ -118,13 +127,15 @@ class DownloadManager @Inject constructor(
                 repository.failed(id, "Could not reach the server")
                 return@launch
             }
+            val mime = response.header("Content-Type")?.substringBefore(';')?.trim()
+                .orEmpty().ifBlank { "application/octet-stream" }
             val body = response.body
             if (body == null) {
+                val id = repository.start(url, fileNameFor(url, null), mime)
+                repository.failed(id, context.getString(R.string.msg_download_empty_response))
                 response.close()
                 return@launch
             }
-            val mime = response.header("Content-Type")?.substringBefore(';')?.trim()
-                .orEmpty().ifBlank { "application/octet-stream" }
             val finalUrl = response.request.url.toString()
             val name = fileNameFor(finalUrl, response.header("Content-Disposition"))
             val total = body.contentLength().coerceAtLeast(0L)
