@@ -30,13 +30,22 @@ object AppLocaleManager {
     private const val PREFS_NAME = "chrogecko_locale"
     private const val KEY_LANGUAGE = "language_tag"
 
-    fun readSavedTag(context: Context): String =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    /** SharedPreferences is disk-backed; cache the tag after the first startup read. */
+    @Volatile
+    private var cachedTag: String? = null
+
+    fun readSavedTag(context: Context): String {
+        cachedTag?.let { return it }
+        val tag = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(KEY_LANGUAGE, AppLanguage.SYSTEM.tag)
             .let { AppLanguage.fromTag(it).tag }
+        cachedTag = tag
+        return tag
+    }
 
     fun writeSavedTag(context: Context, tag: String) {
         val normalized = AppLanguage.fromTag(tag).tag
+        cachedTag = normalized
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
             putString(KEY_LANGUAGE, normalized)
         }

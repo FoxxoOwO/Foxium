@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Performance
+
+- **Discover:** fetches at most a bounded oversample of items per source instead of 200, sources are fetched in parallel outside the cache mutex, and the redundant second DNS lookup was removed (~800 HTTP calls and ~1,600 DNS lookups per cache miss before).
+- **Cast proxy:** the LAN base address is resolved once at startup instead of enumerating network interfaces for every HLS segment; proxy startup is forced onto the IO dispatcher; media snapshots are capped at 32 tabs; sniffer flush events are de-duplicated.
+- **Downloads and media:** progress database writes and notification rebuilds are throttled to once per second; media metadata/notifications are rebuilt only when the content actually changes, not on every position tick.
+- **Startup/UI:** embedded-extension re-registration is idempotent and no longer force-disconnects live ports; the locale tag is cached in memory; omnibox suggestions are debounced; the incognito badge path is cached between draws; tab-swipe pointer events are coalesced into one consumer job; a duplicated language flow collection was removed.
+- **Bookmarks:** HTML import preloads existing URLs in one query instead of one SELECT per entry.
+
 ## [0.79.0] - 2026-11-25
 
 ### Changed

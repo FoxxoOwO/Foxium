@@ -11,12 +11,14 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.res.stringResource
 import com.chrogecko.browser.R
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -400,6 +402,8 @@ private fun TabCard(
     modifier: Modifier = Modifier,
 ) {
     val swipeX = remember(tab.id) { Animatable(0f) }
+    val pendingDrag = remember(tab.id) { mutableFloatStateOf(0f) }
+    var dragJob by remember(tab.id) { mutableStateOf<Job?>(null) }
     var dismissed by remember(tab.id) { mutableStateOf(false) }
     var gesture by remember(tab.id) { mutableStateOf(CardGesture.NONE) }
     var reorderAborted by remember(tab.id) { mutableStateOf(false) }
@@ -508,7 +512,18 @@ private fun TabCard(
                         }
                         change.consume()
                         velocityTracker.addPosition(change.uptimeMillis, change.position)
-                        scope.launch { swipeX.snapTo(swipeX.value + dragAmount) }
+                        // Coalesce pointer events into one consumer job instead of allocating a
+                        // coroutine for every 60-120 Hz move.
+                        pendingDrag.value += dragAmount
+                        if (dragJob?.isActive != true) {
+                            dragJob = scope.launch {
+                                while (pendingDrag.value != 0f) {
+                                    val delta = pendingDrag.value
+                                    pendingDrag.value = 0f
+                                    swipeX.snapTo(swipeX.value + delta)
+                                }
+                            }
+                        }
                     },
                 )
             },

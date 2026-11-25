@@ -30,6 +30,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -85,9 +88,11 @@ class CastManager @Inject constructor(
         // StateFlow replays the current port state, so this also recovers from the race where the
         // sniffer sends `sniffer/ready` before its message delegate is registered.
         scope.launch {
-            bridge.connectedExtensions.collect { connected ->
-                if (SystemExtensionIds.MEDIASNIFFER in connected) requestMediaFlush()
-            }
+            bridge.connectedExtensions
+                .map { SystemExtensionIds.MEDIASNIFFER in it }
+                .distinctUntilChanged()
+                .filter { it }
+                .collect { requestMediaFlush() }
         }
         scope.launch { initializeCast() }
     }
@@ -172,7 +177,7 @@ class CastManager @Inject constructor(
     }
 
     /** Screen mirroring is published on the same LAN server as the media proxy. */
-    suspend fun publishMirror(): String = proxy.publishMirror()
+    suspend fun publishMirror(): String = withContext(Dispatchers.IO) { proxy.publishMirror() }
 
     fun stopMirror() {
         MirrorFrames.clear()
@@ -288,7 +293,17 @@ class CastManager @Inject constructor(
                         CastMedia.fromJson(item, pageUrl, pageTitle)?.let(::add)
                     }
                 }
-                _media.update { it + (tabId to detected) }
+                _media.update { current ->
+                    // Snapshots contain captured headers and posters: never accumulate them for
+                    // every tab id ever visited during the process lifetime.
+                    val next = LinkedHashMap(current)
+                    next[tabId] = detected
+                    while (next.size > MAX_MEDIA_TABS) {
+                        val oldest = next.keys.firstOrNull() ?: break
+                        next.remove(oldest)
+                    }
+                    next
+                }
             }
             "media/clear" -> {
                 val tabId = event.payload.optLong("tabId", -1L)
@@ -355,5 +370,6 @@ class CastManager @Inject constructor(
 
     private companion object {
         const val CAST_LOAD_TIMEOUT_MS = 15_000L
+        const val MAX_MEDIA_TABS = 32
     }
 }

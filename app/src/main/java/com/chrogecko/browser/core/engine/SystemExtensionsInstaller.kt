@@ -19,7 +19,7 @@ class SystemExtensionsInstaller @Inject constructor(
 ) {
 
     fun installAll() {
-        chroGeckoRuntime.warmUp()
+        // ChroGeckoApplication already warmed the runtime up before calling us.
         val controller = chroGeckoRuntime.runtime.webExtensionController
         for ((path, id) in BUILT_IN_EXTENSIONS) {
             // ensureBuiltIn is idempotent: a fresh install on every process start restarts the
@@ -41,7 +41,10 @@ class SystemExtensionsInstaller @Inject constructor(
                 { extensions ->
                     extensions?.forEach { ext ->
                         if (ext.id in SystemExtensionIds.ALL && !bridge.isConnected(ext.id)) {
-                            bridge.register(ext, force = true)
+                            // Idempotent: our bridge already owns the registration for this
+                            // instance, so this only repairs a genuinely missing delegate and
+                            // never tears down a live port.
+                            bridge.register(ext)
                         }
                     }
                 },

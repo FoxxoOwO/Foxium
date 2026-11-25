@@ -19,6 +19,10 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE url = :url LIMIT 1")
     suspend fun findByUrl(url: String): BookmarkEntity?
 
+    /** Bulk lookup for import: avoids one SELECT per imported URL. */
+    @Query("SELECT url FROM bookmarks")
+    suspend fun allUrls(): List<String>
+
     @Query("SELECT COUNT(*) FROM bookmarks")
     fun observeCount(): Flow<Int>
 

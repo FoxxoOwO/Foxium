@@ -8,7 +8,6 @@ import com.chrogecko.browser.feature.favicons.faviconHost
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
-import java.net.InetAddress
 import java.net.URI
 import java.net.UnknownHostException
 import java.util.concurrent.ConcurrentHashMap
@@ -73,22 +72,29 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
         if (mode == DISCOVER_MODE_RSS) {
             return@withContext rssSuggestions(limit, force, rssFeeds, hidden)
         }
-        cacheMutex.withLock {
-            val now = System.currentTimeMillis()
-            // Fetch every enabled source, then merge. Each feed keeps its own cache so toggling
-            // sources never blocks on a stale combined entry.
-            val merged = sources.ifEmpty { setOf("top") }.map { source ->
-                val cached = cache[source]
-                val fresh = cached != null && now - cached.first < CACHE_TTL_MS
-                when {
-                    force || !fresh -> runCatching { fetchSource(source) }
-                        .getOrDefault(emptyList())
-                        .also { if (it.isNotEmpty()) cache[source] = now to it }
-                    else -> cached.second
+        val now = System.currentTimeMillis()
+        val enabledSources = sources.ifEmpty { setOf("top") }
+        // Read the cache briefly, then fetch sources in parallel outside the lock. Holding the
+        // mutex across the network serialized refreshes and blocked every other caller.
+        val cachedSources = cacheMutex.withLock { enabledSources.associateWith { cache[it] } }
+        val merged = coroutineScope {
+            cachedSources.map { (source, cached) ->
+                async(Dispatchers.IO) {
+                    val fresh = cached != null && now - cached.first < CACHE_TTL_MS
+                    when {
+                        force || !fresh -> runCatching { fetchSource(source, limit) }
+                            .getOrDefault(emptyList())
+                            .also { items ->
+                                if (items.isNotEmpty()) cacheMutex.withLock {
+                                    cache[source] = now to items
+                                }
+                            }
+                        else -> cached.second
+                    }
                 }
-            }
-            DiscoverMerger.merge(merged, hidden, limit)
+            }.awaitAll()
         }
+        DiscoverMerger.merge(merged, hidden, limit)
     }
 
     private suspend fun rssSuggestions(
@@ -96,21 +102,24 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
         force: Boolean,
         rssFeeds: List<RssFeedSource>,
         hidden: Set<String>,
-    ): List<DiscoverItem> = cacheMutex.withLock {
-        if (rssFeeds.isEmpty()) return@withLock emptyList()
+    ): List<DiscoverItem> {
+        if (rssFeeds.isEmpty()) return emptyList()
         val now = System.currentTimeMillis()
+        val cachedFeeds = cacheMutex.withLock {
+            rssFeeds.map { feed -> "rss:${feed.url}" to cache["rss:${feed.url}"] }
+        }
         val gate = Semaphore(4)
         val merged = coroutineScope {
-            rssFeeds.map { feed ->
-                async {
-                    val key = "rss:${feed.url}"
-                    val cached = cache[key]
+            cachedFeeds.map { (key, cached) ->
+                async(Dispatchers.IO) {
                     val fresh = cached != null && now - cached.first < CACHE_TTL_MS
                     when {
                         force || !fresh -> gate.withPermit {
-                            runCatching { fetchRss(feed.url) }
+                            runCatching { fetchRss(key.removePrefix("rss:")) }
                                 .getOrDefault(emptyList())
-                        }.also { if (it.isNotEmpty()) cache[key] = now to it }
+                        }.also { items ->
+                            if (items.isNotEmpty()) cacheMutex.withLock { cache[key] = now to items }
+                        }
                         else -> cached.second
                     }
                 }
@@ -124,7 +133,7 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
         } else {
             maxOf(2, (limit + activeFeeds - 1) / activeFeeds)
         }
-        DiscoverMerger.merge(merged, hidden, limit, maxPerHost = maxPerHost, interleave = true)
+        return DiscoverMerger.merge(merged, hidden, limit, maxPerHost = maxPerHost, interleave = true)
     }
 
     private fun fetchRss(url: String): List<DiscoverItem> {
@@ -153,10 +162,12 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
         out.toString(Charsets.UTF_8.name())
     }
 
-    private suspend fun fetchSource(source: String): List<DiscoverItem> {
+    private suspend fun fetchSource(source: String, wanted: Int): List<DiscoverItem> {
         val ids = json.parseToJsonElement(fetch(endpointFor(source))).jsonArray
             .mapNotNull { it.jsonPrimitive.content.toIntOrNull() }
-            .take(MAX_CACHED_FEED_ITEMS)
+            // Fetching 200 items to render 12 cards was ~800 requests across four sources.
+            // A bounded oversample leaves enough variety after de-duplication.
+            .take((wanted * 3).coerceIn(12, MAX_CACHED_FEED_ITEMS))
         val gate = Semaphore(6)
         val items = coroutineScope {
             ids.map { id -> async { gate.withPermit { item(id) } } }.awaitAll()
@@ -173,14 +184,10 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
         for (attempt in 0 until MAX_REDIRECTS) {
             val safe = RssFeedParser.normalizeFeedUrl(current)
                 ?: throw IOException("Blocked URL: $current")
-            // A public-looking hostname may still resolve into the local network. Validate
-            // every resolved address here (IO thread), not in the UI-facing URL validator.
-            val host = runCatching { URI(safe).host }.getOrNull()
+            // safeClient's Dns hook validates resolved addresses on connect, so a separate
+            // getAllByName() here would double every DNS lookup without adding protection.
+            runCatching { URI(safe).host }.getOrNull()
                 ?: throw IOException("Invalid URL: $safe")
-            val addresses = runCatching { InetAddress.getAllByName(host) }.getOrDefault(emptyArray())
-            if (addresses.isEmpty() || addresses.any(NetworkTargetPolicy::isNonPublic)) {
-                throw IOException("Blocked non-public feed host: $host")
-            }
             val request = Request.Builder().url(safe).header("Accept", accept).build()
             safeClient.newCall(request).execute().use { response ->
                 val location = response.header("Location")

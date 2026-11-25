@@ -111,6 +111,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -269,6 +270,7 @@ class BrowserViewModel @Inject constructor(
     private val _omniboxSuggestions = MutableStateFlow<List<SearchSuggestion>>(emptyList())
     val omniboxSuggestions: StateFlow<List<SearchSuggestion>> = _omniboxSuggestions.asStateFlow()
     private var suggestJob: Job? = null
+    private var suggestGeneration = 0
 
     private val _gridOpen = MutableStateFlow(false)
     val gridOpen: StateFlow<Boolean> = _gridOpen.asStateFlow()
@@ -1073,9 +1075,13 @@ class BrowserViewModel @Inject constructor(
             _omniboxSuggestions.value = emptyList()
             return
         }
+        val generation = ++suggestGeneration
         suggestJob = viewModelScope.launch {
+            // Debounce fast typing: only the settled query performs a network request.
+            delay(180L)
+            if (generation != suggestGeneration || _omniboxText.value.trim() != query) return@launch
             val needle = query.lowercase()
-            val local = buildList {
+            val local = withContext(Dispatchers.Default) { buildList {
                 if (suggestionsFromHistory.value) {
                     historyList.value
                         .filter { it.title.contains(needle, true) || it.url.contains(needle, true) }
@@ -1090,7 +1096,7 @@ class BrowserViewModel @Inject constructor(
                         .take(3)
                         .forEach { add(SearchSuggestion(it.title.ifBlank { it.url }, it.url, SearchSuggestion.Kind.BOOKMARK)) }
                 }
-            }
+            } }
             val template = activeSearchEngine.value.template
             val remote = suggestionRepository.engineSuggestions(query, searchEngine.value)
                 .map { SearchSuggestion(it, normalizeOmniboxInput(it, template), SearchSuggestion.Kind.QUERY) }
@@ -1099,6 +1105,7 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun clearSuggestions() {
+        suggestGeneration++
         suggestJob?.cancel()
         _omniboxSuggestions.value = emptyList()
     }

@@ -32,6 +32,9 @@ class MediaPlaybackService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var current: NowPlaying? = null
     private var foreground = false
+    private var lastMetadataKey: String? = null
+    private var lastNotificationKey: String? = null
+    private var lastNotifyAt = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -128,14 +131,18 @@ class MediaPlaybackService : Service() {
     }
 
     private fun present(state: NowPlaying) {
-        session.setMetadata(
-            MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, state.title.ifBlank { getString(R.string.media_playing) })
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, state.artist)
-                .putString(MediaMetadata.METADATA_KEY_ALBUM, state.album)
-                .putLong(MediaMetadata.METADATA_KEY_DURATION, state.durationMs)
-                .build(),
-        )
+        val metadataKey = "${state.title}\u0000${state.artist}\u0000${state.album}\u0000${state.durationMs}"
+        if (metadataKey != lastMetadataKey) {
+            lastMetadataKey = metadataKey
+            session.setMetadata(
+                MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, state.title.ifBlank { getString(R.string.media_playing) })
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, state.artist)
+                    .putString(MediaMetadata.METADATA_KEY_ALBUM, state.album)
+                    .putLong(MediaMetadata.METADATA_KEY_DURATION, state.durationMs)
+                    .build(),
+            )
+        }
         session.setPlaybackState(
             PlaybackState.Builder()
                 .setActions(actionsFor(state.features, state.durationMs))
@@ -146,6 +153,13 @@ class MediaPlaybackService : Service() {
                 )
                 .build(),
         )
+        // Gecko reports position several times a second; rebuilding the notification and its
+        // three PendingIntents at that rate is pure allocation churn.
+        val notificationKey = "$metadataKey\u0000${state.playing}\u0000${state.features}"
+        val now = System.currentTimeMillis()
+        if (notificationKey == lastNotificationKey && now - lastNotifyAt < 1_000L) return
+        lastNotificationKey = notificationKey
+        lastNotifyAt = now
         val notification = buildNotification(state)
         if (foreground) {
             runCatching {

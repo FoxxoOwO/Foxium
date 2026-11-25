@@ -64,6 +64,10 @@ class CastProxyServer @Inject constructor(
     @Volatile
     private var boundPort: Int = 0
 
+    /** Resolved once at start: enumerating interfaces per HLS segment costs seconds. */
+    @Volatile
+    private var boundAddress: String? = null
+
     @Volatile
     private var mirrorToken: String? = null
 
@@ -106,8 +110,11 @@ class CastProxyServer @Inject constructor(
     }
 
     private fun currentBaseUrl(): String {
+        val cached = boundAddress
+        if (cached != null) return "http://$cached:$boundPort"
         val address = localIpv4Address()
             ?: throw IOException("No routable LAN address for Chromecast")
+        boundAddress = address
         return "http://$address:$boundPort"
     }
 
@@ -127,6 +134,7 @@ class CastProxyServer @Inject constructor(
         runCatching { server?.stop(500, 1500) }
         server = null
         boundPort = 0
+        boundAddress = null
         mirrorToken = null
         streams.clear()
     }

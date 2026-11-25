@@ -155,6 +155,7 @@ fun ChromeBrowserScreen(
         ) {
             ChromeBrowserContent(
                 viewModel = viewModel,
+                appLanguage = appLanguage,
                 externalUrl = externalUrl,
                 onExternalUrlConsumed = onExternalUrlConsumed,
                 settingsOpen = settingsOpen,
@@ -169,6 +170,7 @@ fun ChromeBrowserScreen(
 @Composable
 private fun ChromeBrowserContent(
     viewModel: BrowserViewModel,
+    appLanguage: String,
     externalUrl: String?,
     onExternalUrlConsumed: () -> Unit,
     settingsOpen: Boolean,
@@ -214,7 +216,6 @@ private fun ChromeBrowserContent(
     val context = LocalContext.current
     val resources = LocalResources.current
     val focusManager = LocalFocusManager.current
-    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val androidAutofillEnabled by viewModel.androidAutofillEnabled.collectAsStateWithLifecycle()
     // An intent handed over by another app opens in its own tab, as Chrome does.
     LaunchedEffect(externalUrl) {

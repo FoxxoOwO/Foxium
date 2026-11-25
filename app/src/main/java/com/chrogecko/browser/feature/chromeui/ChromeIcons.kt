@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -36,55 +37,52 @@ fun IncognitoBadgeIcon(
     modifier: Modifier = Modifier,
     tint: Color = LocalContentColor.current,
 ) {
-    Canvas(modifier = if (modifier === Modifier) Modifier.size(20.dp) else modifier) {
-        val w = size.width
-        val h = size.height
+    val drawModifier = if (modifier === Modifier) Modifier.size(20.dp) else modifier
+    Box(
+        drawModifier.drawWithCache {
+            val w = size.width
+            val h = size.height
+            // Geometry objects are created only when the size changes, not on every frame.
+            val crown = Path().apply {
+                moveTo(w * 0.28f, h * 0.44f)
+                lineTo(w * 0.36f, h * 0.14f)
+                lineTo(w * 0.64f, h * 0.14f)
+                lineTo(w * 0.72f, h * 0.44f)
+                close()
+            }
+            val brimWidth = (h * 0.085f).coerceAtLeast(1.5f)
+            val lensRadius = w * 0.135f
+            val lensY = h * 0.73f
+            val leftX = w * 0.31f
+            val rightX = w * 0.69f
+            val lensStroke = (w * 0.09f).coerceAtLeast(1.5f)
+            val leftLens = Offset(leftX, lensY)
+            val rightLens = Offset(rightX, lensY)
+            val bridgeStart = Offset(leftX + lensRadius * 0.9f, lensY - lensRadius * 0.15f)
+            val bridgeEnd = Offset(rightX - lensRadius * 0.9f, lensY - lensRadius * 0.15f)
+            val lensStyle = Stroke(width = lensStroke)
 
-        // Hat crown (trapezoid silhouette).
-        val crown = Path().apply {
-            moveTo(w * 0.28f, h * 0.44f)
-            lineTo(w * 0.36f, h * 0.14f)
-            lineTo(w * 0.64f, h * 0.14f)
-            lineTo(w * 0.72f, h * 0.44f)
-            close()
-        }
-        drawPath(crown, color = tint)
-
-        // Hat brim.
-        drawLine(
-            color = tint,
-            start = Offset(w * 0.12f, h * 0.47f),
-            end = Offset(w * 0.88f, h * 0.47f),
-            strokeWidth = (h * 0.085f).coerceAtLeast(1.5f),
-            cap = StrokeCap.Round,
-        )
-
-        // Glasses lenses + bridge.
-        val lensRadius = w * 0.135f
-        val lensY = h * 0.73f
-        val leftX = w * 0.31f
-        val rightX = w * 0.69f
-        val lensStroke = (w * 0.09f).coerceAtLeast(1.5f)
-        drawCircle(
-            color = tint,
-            radius = lensRadius,
-            center = Offset(leftX, lensY),
-            style = Stroke(width = lensStroke),
-        )
-        drawCircle(
-            color = tint,
-            radius = lensRadius,
-            center = Offset(rightX, lensY),
-            style = Stroke(width = lensStroke),
-        )
-        drawLine(
-            color = tint,
-            start = Offset(leftX + lensRadius * 0.9f, lensY - lensRadius * 0.15f),
-            end = Offset(rightX - lensRadius * 0.9f, lensY - lensRadius * 0.15f),
-            strokeWidth = lensStroke,
-            cap = StrokeCap.Round,
-        )
-    }
+            onDrawBehind {
+                drawPath(crown, color = tint)
+                drawLine(
+                    color = tint,
+                    start = Offset(w * 0.12f, h * 0.47f),
+                    end = Offset(w * 0.88f, h * 0.47f),
+                    strokeWidth = brimWidth,
+                    cap = StrokeCap.Round,
+                )
+                drawCircle(color = tint, radius = lensRadius, center = leftLens, style = lensStyle)
+                drawCircle(color = tint, radius = lensRadius, center = rightLens, style = lensStyle)
+                drawLine(
+                    color = tint,
+                    start = bridgeStart,
+                    end = bridgeEnd,
+                    strokeWidth = lensStroke,
+                    cap = StrokeCap.Round,
+                )
+            }
+        },
+    )
 }
 
 /**

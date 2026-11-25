@@ -114,10 +114,9 @@ class BookmarkRepository @Inject constructor(
             }
 
             var added = 0
-            val seenUrls = HashSet<String>()
+            val seenUrls = HashSet(dao.allUrls())
             for (entry in entries) {
                 if (!seenUrls.add(entry.url)) continue
-                if (dao.findByUrl(entry.url) != null) continue
                 val targetFolderId = ensureFolder(entry.folderPath)
                 dao.insert(
                     BookmarkEntity(

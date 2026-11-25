@@ -41,6 +41,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.OkHttpClient
@@ -115,7 +117,13 @@ class AppUpdateManager @Inject constructor(
         manager
     }
 
-    suspend fun checkForUpdates(force: Boolean) {
+    private val checkMutex = Mutex()
+
+    suspend fun checkForUpdates(force: Boolean) = checkMutex.withLock {
+        checkForUpdatesLocked(force)
+    }
+
+    private suspend fun checkForUpdatesLocked(force: Boolean) {
         if (downloading.get() || _state.value is UpdateState.Downloading) return
         if (!force && _state.value is UpdateState.ReadyToInstall) return
         if (!force) {

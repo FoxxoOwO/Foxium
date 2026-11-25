@@ -177,8 +177,8 @@ class DownloadManager @Inject constructor(
             val destination = DownloadStorage.create(context, fileName, mime, downloadLocation)
             target = destination
             var written = 0L
-            var reported = 0L
-            var notified = 0L
+            var lastReportAt = System.currentTimeMillis()
+            var lastNotifyAt = lastReportAt
             notifyProgress(id, fileName, 0, safeDeclaredSize)
             body.use { input ->
                 destination.output.use { output ->
@@ -189,12 +189,15 @@ class DownloadManager @Inject constructor(
                         if (read < 0) break
                         output.write(buffer, 0, read)
                         written += read
-                        if (written - reported >= 256 * 1024) {
-                            reported = written
+                        // Time-based throttling: a 2 GB download used to issue ~8,000 Room
+                        // updates and ~4,000 notification rebuilds instead of ~1 per second.
+                        val now = System.currentTimeMillis()
+                        if (now - lastReportAt >= 1_000L) {
+                            lastReportAt = now
                             repository.progress(id, written, safeDeclaredSize)
                         }
-                        if (written - notified >= 512 * 1024) {
-                            notified = written
+                        if (now - lastNotifyAt >= 1_000L) {
+                            lastNotifyAt = now
                             notifyProgress(id, fileName, written, safeDeclaredSize)
                         }
                     }
