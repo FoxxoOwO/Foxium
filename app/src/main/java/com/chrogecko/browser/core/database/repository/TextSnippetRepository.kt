@@ -20,11 +20,11 @@ class TextSnippetRepository @Inject constructor(private val dao: TextSnippetDao)
         val clean = trigger.trim()
         if (clean.isEmpty() || clean.any { it.isWhitespace() }) return 0
         if (expansion.isEmpty()) return 0
-        val now = System.currentTimeMillis()
         val conflict = dao.findByTrigger(clean)
         if (conflict != null && conflict.id != id) {
-            dao.updateExpansion(conflict.id, expansion, now)
-            return conflict.id
+            // Reject the edit: overwriting the *other* row's expansion made the user's change
+            // vanish while corrupting an unrelated snippet.
+            return 0
         }
         val existingEnabled = if (id != 0L) dao.findById(id)?.enabled ?: true else true
         return dao.upsert(

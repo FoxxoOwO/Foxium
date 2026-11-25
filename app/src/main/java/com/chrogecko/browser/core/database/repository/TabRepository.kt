@@ -32,16 +32,20 @@ class TabRepository @Inject constructor(
         url: String? = null,
         isPrivate: Boolean = false,
         groupId: String? = null,
-    ): TabEntity {
-        val tab = TabEntity(
+    ): TabEntity = insertTab(
+        TabEntity(
             id = UUID.randomUUID().toString(),
             url = url,
             groupId = groupId,
             isPrivate = isPrivate,
-            sortOrder = tabDao.maxSortOrder(isPrivate) + 1,
-        )
-        tabDao.upsert(tab)
-        return tab
+        ),
+    )
+
+    /** Allocates sortOrder inside the insert transaction so parallel tab creation cannot tie. */
+    suspend fun insertTab(tab: TabEntity): TabEntity = database.withTransaction {
+        val stored = tab.copy(sortOrder = tabDao.maxSortOrder(tab.isPrivate) + 1)
+        tabDao.upsert(stored)
+        stored
     }
 
     suspend fun update(tab: TabEntity) = tabDao.upsert(tab)

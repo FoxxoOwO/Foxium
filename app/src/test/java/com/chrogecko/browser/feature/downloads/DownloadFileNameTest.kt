@@ -39,6 +39,21 @@ class DownloadFileNameTest {
     }
 
     @Test
+    fun keepsLiteralPlusSigns() {
+        assertEquals(
+            "a+b.zip",
+            DownloadManager.fileNameFor("https://x.test/a+b.zip", null),
+        )
+        assertEquals(
+            "foo+bar.txt",
+            DownloadManager.fileNameFor(
+                "https://x.test/file",
+                "attachment; filename*=UTF-8''foo+bar.txt",
+            ),
+        )
+    }
+
+    @Test
     fun rejectsDotOnlyFilenames() {
         assertEquals("download.bin", DownloadManager.fileNameFor("https://x.test/.", null))
         assertEquals("download.bin", DownloadManager.fileNameFor("https://x.test/..", null))

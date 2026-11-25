@@ -16,7 +16,7 @@ interface UserscriptDao {
     @Query("SELECT * FROM userscripts WHERE enabled = 1 ORDER BY name COLLATE NOCASE ASC")
     fun observeEnabled(): Flow<List<UserscriptEntity>>
 
-    @Query("SELECT * FROM userscripts WHERE enabled = 1")
+    @Query("SELECT * FROM userscripts WHERE enabled = 1 ORDER BY name COLLATE NOCASE ASC")
     suspend fun enabledScripts(): List<UserscriptEntity>
 
     @Query("SELECT * FROM userscripts WHERE id = :id")

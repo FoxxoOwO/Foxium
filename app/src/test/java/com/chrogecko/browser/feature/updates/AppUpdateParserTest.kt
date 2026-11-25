@@ -97,6 +97,53 @@ class AppUpdateParserTest {
     }
 
     @Test
+    fun `parseLatestUpdate prefers stable release over prerelease with same numeric version`() {
+        val json = """
+            [
+              {
+                "tag_name": "v1.0.0-rc1",
+                "name": "1.0.0 RC1",
+                "body": "",
+                "prerelease": true,
+                "draft": false,
+                "html_url": "https://github.com/FoxxoOwO/Foxium/releases/tag/v1.0.0-rc1",
+                "assets": [
+                  {
+                    "name": "app-arm64-v8a-release.apk",
+                    "browser_download_url": "https://github.com/FoxxoOwO/Foxium/releases/download/v1.0.0-rc1/app-arm64-v8a-release.apk",
+                    "size": 1000
+                  }
+                ]
+              },
+              {
+                "tag_name": "v1.0.0",
+                "name": "1.0.0",
+                "body": "",
+                "prerelease": false,
+                "draft": false,
+                "html_url": "https://github.com/FoxxoOwO/Foxium/releases/tag/v1.0.0",
+                "assets": [
+                  {
+                    "name": "app-arm64-v8a-release.apk",
+                    "browser_download_url": "https://github.com/FoxxoOwO/Foxium/releases/download/v1.0.0/app-arm64-v8a-release.apk",
+                    "size": 1000
+                  }
+                ]
+              }
+            ]
+        """.trimIndent()
+        val update = AppUpdateParser.parseLatestUpdate(
+            jsonBody = json,
+            currentVersion = "0.9.0",
+            includePrereleases = true,
+            supportedAbis = listOf("arm64-v8a"),
+        )
+        assertNotNull(update)
+        assertEquals("v1.0.0", update?.tagName)
+        assertFalse(update!!.isPrerelease)
+    }
+
+    @Test
     fun `parseLatestUpdate picks best ABI or universal fallback`() {
         val json = """
             [

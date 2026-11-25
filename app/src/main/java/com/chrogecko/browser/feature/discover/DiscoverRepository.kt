@@ -1,5 +1,6 @@
 package com.chrogecko.browser.feature.discover
 
+import com.chrogecko.browser.core.network.NetworkTargetPolicy
 import com.chrogecko.browser.core.preferences.DISCOVER_MODE_HACKER_NEWS
 import com.chrogecko.browser.core.preferences.DISCOVER_MODE_RSS
 import com.chrogecko.browser.core.preferences.RssFeedSource
@@ -7,6 +8,8 @@ import com.chrogecko.browser.feature.favicons.faviconHost
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.net.URI
+import java.net.UnknownHostException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -21,6 +24,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -38,6 +42,21 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val cacheMutex = Mutex()
+
+    /** Redirects are followed manually and every hop is re-validated; DNS is pinned at connect. */
+    private val safeClient: OkHttpClient = client.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .dns(object : Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> {
+                val resolved = Dns.SYSTEM.lookup(hostname)
+                if (resolved.any(NetworkTargetPolicy::isNonPublic)) {
+                    throw UnknownHostException("Blocked non-public address for $hostname")
+                }
+                return resolved
+            }
+        })
+        .build()
 
     /** Separate cache per feed so switching Top/New never shows the other list's stories. */
     private val cache = ConcurrentHashMap<String, Pair<Long, List<DiscoverItem>>>()
@@ -61,7 +80,7 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
                 val cached = cache[source]
                 val fresh = cached != null && now - cached.first < CACHE_TTL_MS
                 when {
-                    force || !fresh -> runCatching { fetchSource(source, limit, hidden) }
+                    force || !fresh -> runCatching { fetchSource(source) }
                         .getOrDefault(emptyList())
                         .also { if (it.isNotEmpty()) cache[source] = now to it }
                     else -> cached.second
@@ -88,7 +107,7 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
                     val fresh = cached != null && now - cached.first < CACHE_TTL_MS
                     when {
                         force || !fresh -> gate.withPermit {
-                            runCatching { fetchRss(feed.url, limit) }
+                            runCatching { fetchRss(feed.url) }
                                 .getOrDefault(emptyList())
                         }.also { if (it.isNotEmpty()) cache[key] = now to it }
                         else -> cached.second
@@ -100,21 +119,14 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
         DiscoverMerger.merge(merged, hidden, limit, maxPerHost = maxPerHost, interleave = true)
     }
 
-    private fun fetchRss(url: String, limit: Int): List<DiscoverItem> {
-        val safeUrl = RssFeedParser.normalizeFeedUrl(url) ?: return emptyList()
-        val request = Request.Builder()
-            .url(safeUrl)
-            .header(
-                "Accept",
-                "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9",
-            )
-            .build()
-        val xml = client.newCall(request).execute().use { response ->
-            check(response.isSuccessful) { "HTTP ${response.code} for $safeUrl" }
-            val body = response.body ?: return emptyList()
-            readBoundedUtf8(body.byteStream(), MAX_RSS_BYTES)
-        }
-        return RssFeedParser.parse(xml, safeUrl, limit * 2)
+    private fun fetchRss(url: String): List<DiscoverItem> {
+        val xml = fetchValidated(
+            url,
+            "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9",
+        )
+        // Store unfiltered items; DiscoverMerger applies hidden/limit at read time so un-hiding
+        // an article or raising the limit does not wait for the cache TTL.
+        return RssFeedParser.parse(xml, url, MAX_CACHED_FEED_ITEMS)
     }
 
     private fun readBoundedUtf8(stream: InputStream, maxBytes: Int): String = stream.use { input ->
@@ -133,26 +145,41 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
         out.toString(Charsets.UTF_8.name())
     }
 
-    private suspend fun fetchSource(source: String, limit: Int, hidden: Set<String>): List<DiscoverItem> {
+    private suspend fun fetchSource(source: String): List<DiscoverItem> {
         val ids = json.parseToJsonElement(fetch(endpointFor(source))).jsonArray
             .mapNotNull { it.jsonPrimitive.content.toIntOrNull() }
-            .take(limit * 4)
+            .take(MAX_CACHED_FEED_ITEMS)
         val gate = Semaphore(6)
         val items = coroutineScope {
             ids.map { id -> async { gate.withPermit { item(id) } } }.awaitAll()
         }
         return items.filterNotNull()
             .distinctBy { it.host }
-            .filterNot { it.url in hidden }
-            .take(limit * 2)
     }
 
-    private fun fetch(url: String): String {
-        val request = Request.Builder().url(url).header("Accept", "application/json").build()
-        return client.newCall(request).execute().use { response ->
-            check(response.isSuccessful) { "HTTP ${response.code} for $url" }
-            response.body?.string().orEmpty()
+    private fun fetch(url: String): String = fetchValidated(url, "application/json")
+
+    /** Validates every URL before connecting and after each redirect (no automatic redirects). */
+    private fun fetchValidated(url: String, accept: String): String {
+        var current = url
+        for (attempt in 0 until MAX_REDIRECTS) {
+            val safe = RssFeedParser.normalizeFeedUrl(current)
+                ?: throw IOException("Blocked URL: $current")
+            val request = Request.Builder().url(safe).header("Accept", accept).build()
+            safeClient.newCall(request).execute().use { response ->
+                val location = response.header("Location")
+                if (response.code in 301..308 && !location.isNullOrBlank()) {
+                    current = URI(safe).resolve(location)?.toString().orEmpty()
+                    if (current.isEmpty()) throw IOException("Invalid redirect target")
+                    return@use
+                }
+                if (!response.isSuccessful) throw IOException("HTTP ${response.code} for $safe")
+                val stream = response.body?.byteStream()
+                if (stream != null) return readBoundedUtf8(stream, MAX_RSS_BYTES)
+                return ""
+            }
         }
+        throw IOException("Too many redirects")
     }
 
     private fun item(id: Int): DiscoverItem? = runCatching {
@@ -175,6 +202,8 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
         const val ITEM_URL = "https://hacker-news.firebaseio.com/v0/item/"
         const val CACHE_TTL_MS = 10L * 60L * 1000L
         private const val MAX_RSS_BYTES = 2 * 1024 * 1024
+        private const val MAX_CACHED_FEED_ITEMS = 200
+        private const val MAX_REDIRECTS = 5
 
         /** Pure mapping so source selection can be unit-tested without a network call. */
         fun endpointFor(source: String): String = when (source) {

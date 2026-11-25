@@ -171,7 +171,9 @@ class AddonManagerController @Inject constructor(
         pendingPrompt = null
         _pendingInstall.value = null
         mainHandler.post {
-            result.complete(WebExtension.PermissionPromptResponse(allow, allow, false))
+            // The dialog never asks for incognito access: never grant private mode implicitly.
+            // The third field covers the data-collection permission that the dialog does list.
+            result.complete(WebExtension.PermissionPromptResponse(allow, false, allow))
         }
     }
 

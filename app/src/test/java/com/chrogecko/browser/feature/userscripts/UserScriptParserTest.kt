@@ -58,6 +58,25 @@ class UserScriptParserTest {
     }
 
     @Test
+    fun `localized metadata keys and exclude-match are recognized`() {
+        val parsed = UserScriptParser.parse(
+            """
+            // ==UserScript==
+            // @name:zh-CN 本地化名称
+            // @description:de Deutsche Beschreibung
+            // @match      https://example.com/*
+            // @exclude-match *://*.tk/*
+            // ==/UserScript==
+            console.log("x")
+            """.trimIndent(),
+        )
+        assertEquals("本地化名称", parsed.name)
+        assertEquals("Deutsche Beschreibung", parsed.description)
+        assertEquals(listOf("*://*.tk/*"), parsed.excludePatterns)
+        assertEquals("本地化名称", UserScriptParser.extractFileName(parsed.source))
+    }
+
+    @Test
     fun `run-at defaults to document-idle and namespace to name`() {
         val parsed = UserScriptParser.parse(
             """

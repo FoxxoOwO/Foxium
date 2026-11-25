@@ -14,10 +14,12 @@ import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.retryWhen
 import org.mozilla.geckoview.GeckoRuntimeSettings
 
 private val Context.preferences: DataStore<Preferences> by preferencesDataStore(name = "chrogecko_preferences")
@@ -40,138 +42,130 @@ val TOOLBAR_SHORTCUTS = listOf("none", "home", "newTab", "bookmarks", "history",
 @Singleton
 class AppPreferences @Inject constructor(@param:ApplicationContext private val context: Context) {
 
-    val forceDark: Flow<Boolean> = context.preferences.data
+    /**
+     * A transient DataStore read error must not terminate every preference flow (stateIn would
+     * otherwise freeze the last value forever). Retry briefly, then fall back to defaults once.
+     */
+    private val data: Flow<Preferences> = context.preferences.data
+        .retryWhen { _, attempt ->
+            if (attempt < 3L) {
+                delay(100L * (attempt + 1))
+                true
+            } else {
+                false
+            }
+        }
         .catch { emit(emptyPreferences()) }
+
+    val forceDark: Flow<Boolean> = data
         .map { it[FORCE_DARK] ?: false }
         .distinctUntilChanged()
 
     /** Gecko's enhanced tracking protection, applied to every session. */
-    val trackingProtection: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val trackingProtection: Flow<Boolean> = data
         .map { it[TRACKING_PROTECTION] ?: true }
         .distinctUntilChanged()
 
     /** HTTPS-only enforcement mode across normal and private tabs. */
-    val httpsOnlyMode: Flow<HttpsOnlyMode> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val httpsOnlyMode: Flow<HttpsOnlyMode> = data
         .map { HttpsOnlyMode.fromId(it[HTTPS_ONLY_MODE]) }
         .distinctUntilChanged()
 
     /** Third-party and cross-site cookie policy. */
-    val cookiePolicy: Flow<CookiePolicy> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val cookiePolicy: Flow<CookiePolicy> = data
         .map { CookiePolicy.fromId(it[COOKIE_POLICY]) }
         .distinctUntilChanged()
 
     /** Purges state stored by redirect-based bounce trackers. */
-    val bounceTrackingProtection: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val bounceTrackingProtection: Flow<Boolean> = data
         .map { it[BOUNCE_TRACKING_PROTECTION] ?: true }
         .distinctUntilChanged()
 
     /** Automatic cookie-consent banner handling mode. */
-    val cookieBannerMode: Flow<CookieBannerMode> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val cookieBannerMode: Flow<CookieBannerMode> = data
         .map { CookieBannerMode.fromId(it[COOKIE_BANNER_MODE]) }
         .distinctUntilChanged()
 
     /** Gecko Safe Browsing protection against phishing and malware sites. */
-    val safeBrowsing: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val safeBrowsing: Flow<Boolean> = data
         .map { it[SAFE_BROWSING] ?: true }
         .distinctUntilChanged()
 
     /** Global Privacy Control (`Sec-GPC`) opt-out signal sent to websites. */
-    val globalPrivacyControl: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val globalPrivacyControl: Flow<Boolean> = data
         .map { it[GLOBAL_PRIVACY_CONTROL] ?: true }
         .distinctUntilChanged()
 
     /** Strips known UTM/click-tracking query parameters on navigation. */
-    val queryParameterStripping: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val queryParameterStripping: Flow<Boolean> = data
         .map { it[QUERY_PARAM_STRIPPING] ?: true }
         .distinctUntilChanged()
 
     /** DNS-over-HTTPS (Trusted Recursive Resolver) mode. */
-    val dohMode: Flow<DohMode> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val dohMode: Flow<DohMode> = data
         .map { DohMode.fromId(it[DOH_MODE]) }
         .distinctUntilChanged()
 
     /** Selected DNS-over-HTTPS provider preset or custom endpoint. */
-    val dohProvider: Flow<DohProvider> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val dohProvider: Flow<DohProvider> = data
         .map { DohProvider.fromId(it[DOH_PROVIDER]) }
         .distinctUntilChanged()
 
     /** Custom DNS-over-HTTPS resolver URL used when [dohProvider] is [DohProvider.CUSTOM]. */
-    val dohCustomUri: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val dohCustomUri: Flow<String> = data
         .map { it[DOH_CUSTOM_URI] ?: "" }
         .distinctUntilChanged()
 
     /** Tier-2 engine used by the bundled dark-mode extension: "invert" or "dynamic". */
-    val darkEngine: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val darkEngine: Flow<String> = data
         .map { it[DARK_ENGINE] ?: "invert" }
         .distinctUntilChanged()
 
-    val toolbarPosition: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val toolbarPosition: Flow<String> = data
         .map { it[TOOLBAR_POSITION] ?: "top" }
         .distinctUntilChanged()
 
     /** Chrome-style behaviour: hide the toolbar while the page scrolls down. */
-    val toolbarAutoHide: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val toolbarAutoHide: Flow<Boolean> = data
         .map { it[TOOLBAR_AUTO_HIDE] ?: true }
         .distinctUntilChanged()
 
     /** Optional extra toolbar button: none, home, newTab, bookmarks, history or closeTab. */
-    val toolbarShortcut: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val toolbarShortcut: Flow<String> = data
         .map { it[TOOLBAR_SHORTCUT] ?: "none" }
         .distinctUntilChanged()
 
     /** Offer completion suggestions while typing in the omnibox. */
-    val searchSuggestions: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val searchSuggestions: Flow<Boolean> = data
         .map { it[SEARCH_SUGGESTIONS] ?: true }
         .distinctUntilChanged()
 
     /** Include matching bookmarks in omnibox suggestions. */
-    val suggestionsFromBookmarks: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val suggestionsFromBookmarks: Flow<Boolean> = data
         .map { it[SUGGESTIONS_BOOKMARKS] ?: true }
         .distinctUntilChanged()
 
     /** Include matching history entries in omnibox suggestions. */
-    val suggestionsFromHistory: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val suggestionsFromHistory: Flow<Boolean> = data
         .map { it[SUGGESTIONS_HISTORY] ?: true }
         .distinctUntilChanged()
 
-    val searchEngine: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val searchEngine: Flow<String> = data
         .map { it[SEARCH_ENGINE] ?: "duckduckgo" }
         .distinctUntilChanged()
 
     /** Display name for the user's custom search engine. */
-    val customSearchName: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val customSearchName: Flow<String> = data
         .map { it[CUSTOM_SEARCH_NAME] ?: "" }
         .distinctUntilChanged()
 
     /** URL template (containing `%s`) for the user's custom search engine. */
-    val customSearchTemplate: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val customSearchTemplate: Flow<String> = data
         .map { it[CUSTOM_SEARCH_TEMPLATE] ?: "" }
         .distinctUntilChanged()
 
     /** Where finished downloads are saved: public Downloads or the app's private folder. */
-    val downloadLocation: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val downloadLocation: Flow<String> = data
         .map {
             val value = it[DOWNLOAD_LOCATION] ?: "downloads"
             if (value == "app") "app" else "downloads"
@@ -179,26 +173,22 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
         .distinctUntilChanged()
 
     /** Whether the new tab page shows the Discover feed at all. */
-    val discoverEnabled: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val discoverEnabled: Flow<Boolean> = data
         .map { it[DISCOVER_ENABLED] ?: true }
         .distinctUntilChanged()
 
     /** Discover feed type: Hacker News lists or user-added RSS/Atom feeds. */
-    val discoverMode: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val discoverMode: Flow<String> = data
         .map { if (it[DISCOVER_MODE] == DISCOVER_MODE_RSS) DISCOVER_MODE_RSS else DISCOVER_MODE_HACKER_NEWS }
         .distinctUntilChanged()
 
     /** User-configured RSS/Atom feeds for Discover, in the order they were added. */
-    val discoverRssFeeds: Flow<List<RssFeedSource>> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val discoverRssFeeds: Flow<List<RssFeedSource>> = data
         .map { prefs -> parseRssFeeds(prefs[DISCOVER_RSS_FEEDS].orEmpty()) }
         .distinctUntilChanged()
 
     /** Hacker News lists used for Discover; can be any subset of [DISCOVER_SOURCES]. */
-    val discoverSources: Flow<Set<String>> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val discoverSources: Flow<Set<String>> = data
         .map { prefs ->
             val saved = prefs[DISCOVER_SOURCES_KEY]
             val value = if (saved == null) {
@@ -215,71 +205,64 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
         .distinctUntilChanged()
 
     /** Number of articles requested for the Discover feed. */
-    val discoverLimit: Flow<Int> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val discoverLimit: Flow<Int> = data
         .map { it[DISCOVER_LIMIT] ?: 12 }
         .distinctUntilChanged()
 
     /** Article URLs the user marked as "not interested". */
-    val hiddenDiscover: Flow<Set<String>> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val hiddenDiscover: Flow<Set<String>> = data
         .map { it[HIDDEN_DISCOVER] ?: emptySet() }
         .distinctUntilChanged()
 
     /** Hosts the user removed from the new tab page shortcuts. */
-    val hiddenShortcuts: Flow<Set<String>> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val hiddenShortcuts: Flow<Set<String>> = data
         .map { it[HIDDEN_SHORTCUTS] ?: emptySet() }
         .distinctUntilChanged()
 
     /** User-pinned new tab page shortcuts, in the order they were added. */
-    val customShortcuts: Flow<List<PinnedShortcut>> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val customShortcuts: Flow<List<PinnedShortcut>> = data
         .map { prefs -> parsePinned(prefs[CUSTOM_SHORTCUTS].orEmpty()) }
         .distinctUntilChanged()
 
     /** Master switch for the bundled text expander extension. */
-    val textExpanderEnabled: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val textExpanderEnabled: Flow<Boolean> = data
         .map { it[TEXT_EXPANDER] ?: true }
         .distinctUntilChanged()
 
-    val appLanguage: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
-        .map { AppLanguage.fromTag(it[APP_LANGUAGE]).tag }
+    val appLanguage: Flow<String> = data
+        .map { prefs ->
+            // SharedPreferences is written first by setAppLanguage(); if the process died before
+            // DataStore committed, do not let the DataStore default override the saved locale.
+            prefs[APP_LANGUAGE]?.let(AppLanguage::fromTag)?.tag
+                ?: AppLocaleManager.readSavedTag(context)
+        }
         .distinctUntilChanged()
 
-    val androidAutofillEnabled: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val androidAutofillEnabled: Flow<Boolean> = data
         .map { it[ANDROID_AUTOFILL] ?: true }
         .distinctUntilChanged()
 
-    val builtInPasswordSaveEnabled: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val builtInPasswordSaveEnabled: Flow<Boolean> = data
         .map { it[BUILTIN_PASSWORD_SAVE] ?: true }
         .distinctUntilChanged()
 
     /** Automatic background checks against GitHub Releases. */
-    val autoUpdateEnabled: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val autoUpdateEnabled: Flow<Boolean> = data
         .map { it[AUTO_UPDATE_ENABLED] ?: true }
         .distinctUntilChanged()
 
     /** Whether experimental/pre-release GitHub builds are offered as updates. */
-    val autoUpdatePrereleases: Flow<Boolean> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val autoUpdatePrereleases: Flow<Boolean> = data
         .map { it[AUTO_UPDATE_PRERELEASES] ?: true }
         .distinctUntilChanged()
 
     /** Epoch millis of the last completed GitHub Releases check. */
-    val lastUpdateCheckMs: Flow<Long> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val lastUpdateCheckMs: Flow<Long> = data
         .map { it[LAST_UPDATE_CHECK_MS] ?: 0L }
         .distinctUntilChanged()
 
     /** Release tag dismissed by the user in the update prompt. */
-    val dismissedUpdateTag: Flow<String> = context.preferences.data
-        .catch { emit(emptyPreferences()) }
+    val dismissedUpdateTag: Flow<String> = data
         .map { it[DISMISSED_UPDATE_TAG] ?: "" }
         .distinctUntilChanged()
 
@@ -319,14 +302,17 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
         context.preferences.edit { prefs ->
             val current = parsePinned(prefs[CUSTOM_SHORTCUTS].orEmpty())
             prefs[CUSTOM_SHORTCUTS] = encodePinned(
-                current.map { if (it.url == url) it.copy(label = cleanLabel) else it },
+                current.map {
+                    if (it.url.equals(url, ignoreCase = true)) it.copy(label = cleanLabel) else it
+                },
             )
         }
     }
 
     suspend fun removeCustomShortcut(url: String) {
         context.preferences.edit { prefs ->
-            val current = parsePinned(prefs[CUSTOM_SHORTCUTS].orEmpty()).filterNot { it.url == url }
+            val current = parsePinned(prefs[CUSTOM_SHORTCUTS].orEmpty())
+                .filterNot { it.url.equals(url, ignoreCase = true) }
             prefs[CUSTOM_SHORTCUTS] = encodePinned(current)
         }
     }

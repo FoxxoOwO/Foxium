@@ -105,7 +105,16 @@ class CastProxyServer @Inject constructor(
         }
     }
 
-    private fun currentBaseUrl(): String = "http://${localIpv4Address()}:$boundPort"
+    private fun currentBaseUrl(): String {
+        val address = localIpv4Address()
+            ?: throw IOException("No routable LAN address for Chromecast")
+        return "http://$address:$boundPort"
+    }
+
+    private fun sameOrigin(source: URI, target: URI): Boolean =
+        source.scheme.equals(target.scheme, ignoreCase = true) &&
+            source.host.equals(target.host, ignoreCase = true) &&
+            source.port == target.port
 
     private fun portIsFree(port: Int): Boolean = runCatching {
         java.net.ServerSocket().use { socket ->
@@ -290,15 +299,15 @@ class CastProxyServer @Inject constructor(
                 response.close()
                 throw IOException("Blocked redirect to non-public host: ${nextUrl.host}")
             }
-            val sameSite = allowSameOrigin || (
-                originHost != null &&
-                    UrlDomainPolicy.registrableDomain(originHost) == UrlDomainPolicy.registrableDomain(nextUrl.host)
-                )
+            val previous = current.url
+            // Never carry credentials across a scheme, host or port change (including https→http).
+            val sameOrigin = previous.scheme.equals(nextUrl.scheme, ignoreCase = true) &&
+                previous.host.equals(nextUrl.host, ignoreCase = true) && previous.port == nextUrl.port
             response.close()
             current = current.newBuilder()
                 .url(nextUrl)
                 .apply {
-                    if (!sameSite) {
+                    if (!sameOrigin) {
                         removeHeader("Cookie")
                         removeHeader("Authorization")
                     }
@@ -344,12 +353,13 @@ class CastProxyServer @Inject constructor(
             return
         }
 
-        val originHost = runCatching { URI(stream.media.url).host }.getOrNull()
-        val sameHost = originHost != null && originHost.equals(targetHost, ignoreCase = true)
-        // HLS/DASH children often live on a CDN subdomain of the same site; those still need the
-        // captured credentials. Never send them to an unrelated host.
-        val sameSite = sameHost || (originHost != null &&
-            UrlDomainPolicy.registrableDomain(originHost) == UrlDomainPolicy.registrableDomain(targetHost))
+        val origin = runCatching { URI(stream.media.url) }.getOrNull()
+        val originHost = origin?.host
+        // Credentials may only go to the exact origin they were captured from. A heuristic
+        // registrable-domain match can leak cookies between tenants sharing a public suffix, and
+        // an https→http child would send them in plaintext.
+        val sameOrigin = origin != null && sameOrigin(origin, targetUri)
+        val sameHost = origin != null && origin.host.equals(targetHost, ignoreCase = true)
         if (explicitChild != null && !sameHost && isBlockedLocalTarget(targetHost)) {
             call.respond(HttpStatusCode.Forbidden)
             return
@@ -365,7 +375,7 @@ class CastProxyServer @Inject constructor(
                     stream.media.headers.forEach { (name, value) ->
                         val lower = name.lowercase()
                         if (lower in FORBIDDEN_REQUEST_HEADERS || value.isBlank()) return@forEach
-                        if ((lower == "cookie" || lower == "authorization") && !sameSite) return@forEach
+                        if ((lower == "cookie" || lower == "authorization") && !sameOrigin) return@forEach
                         // Captured headers can contain invalid characters; skip them instead of
                         // throwing from the request builder and failing the whole proxy response.
                         runCatching { header(name, value) }
@@ -500,7 +510,7 @@ class CastProxyServer @Inject constructor(
         val base = runCatching { URI(baseUrl) }.getOrNull() ?: return xml
         val withAttributes = DASH_ATTRIBUTE.replace(xml) { match ->
             val attribute = match.groupValues[1]
-            val reference = match.groupValues[2]
+            val reference = decodeXmlEntities(match.groupValues[2].trim())
             if (reference.contains("$") || reference.startsWith("data:")) return@replace match.value
             val resolved = runCatching { base.resolve(reference).toString() }.getOrNull()
                 ?: return@replace match.value
@@ -508,7 +518,7 @@ class CastProxyServer @Inject constructor(
             "$attribute=\"${proxy(resolved)}\""
         }
         return DASH_BASE_URL.replace(withAttributes) { match ->
-            val reference = match.groupValues[1]
+            val reference = decodeXmlEntities(match.groupValues[1].trim())
             if (reference.contains("$")) return@replace match.value
             val resolved = runCatching { base.resolve(reference).toString() }.getOrNull()
                 ?: return@replace match.value
@@ -516,6 +526,13 @@ class CastProxyServer @Inject constructor(
             "<BaseURL>${proxy(resolved)}</BaseURL>"
         }
     }
+
+    private fun decodeXmlEntities(value: String): String = value
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
 
     private fun contentTypeFor(media: CastMedia): String = when {
         media.isHls -> HLS_CONTENT_TYPE
@@ -525,7 +542,7 @@ class CastProxyServer @Inject constructor(
         else -> "video/mp4"
     }
 
-    private fun localIpv4Address(): String {
+    private fun localIpv4Address(): String? {
         val candidates = mutableListOf<Pair<String, String>>()
         val interfaces = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
         for (networkInterface in interfaces) {
@@ -539,7 +556,7 @@ class CastProxyServer @Inject constructor(
         val preferred = candidates.firstOrNull { (name, _) ->
             name.startsWith("wlan") || name.startsWith("ap") || name.startsWith("eth")
         }
-        return (preferred ?: candidates.firstOrNull())?.second ?: "127.0.0.1"
+        return (preferred ?: candidates.firstOrNull())?.second
     }
 
     /** Debug helper exposed for logs/tests. */
@@ -600,7 +617,7 @@ class CastProxyServer @Inject constructor(
             </body></html>
         """.trimIndent()
 
-        val DASH_ATTRIBUTE = Regex("""(media|initialization|sourceURL)="([^"]*)"""")
-        val DASH_BASE_URL = Regex("""<BaseURL>([^<]+)</BaseURL>""")
+        val DASH_ATTRIBUTE = Regex("""(media|initialization|sourceURL)\s*=\s*"([^"]*)"""")
+        val DASH_BASE_URL = Regex("""<BaseURL\b[^>]*>\s*([^<]+?)\s*</BaseURL>""")
     }
 }

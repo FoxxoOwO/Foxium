@@ -39,6 +39,7 @@ class NetworkTargetPolicyTest {
         assertTrue(NetworkTargetPolicy.isNonPublic(v4(203, 0, 113, 9)))
         assertTrue(NetworkTargetPolicy.isNonPublic(v4(240, 0, 0, 1)))
         assertTrue(NetworkTargetPolicy.isNonPublic(v4(0, 0, 0, 0)))
+        assertTrue(NetworkTargetPolicy.isNonPublic(v4(0, 1, 2, 3))) // 0.0.0.0/8
         assertTrue(NetworkTargetPolicy.isNonPublic(v4(224, 0, 0, 1)))
     }
 
@@ -60,6 +61,22 @@ class NetworkTargetPolicyTest {
             NetworkTargetPolicy.isNonPublic(
                 InetAddress.getByAddress(
                     byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff.toByte(), 0xff.toByte(), 127, 0, 0, 1),
+                ),
+            ),
+        )
+        // IPv4-compatible ::127.0.0.1
+        assertTrue(
+            NetworkTargetPolicy.isNonPublic(
+                InetAddress.getByAddress(
+                    byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 0, 0, 1),
+                ),
+            ),
+        )
+        // 6to4 ::200.1.2.3
+        assertTrue(
+            NetworkTargetPolicy.isNonPublic(
+                InetAddress.getByAddress(
+                    byteArrayOf(0x20, 0x02, 127, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1),
                 ),
             ),
         )

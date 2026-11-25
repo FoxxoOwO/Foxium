@@ -24,12 +24,13 @@ internal object RssFeedParser {
         if (host.isEmpty() || host == "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
             return null
         }
-        if (isIpLiteral(host)) {
-            val address = runCatching { InetAddress.getByName(host) }.getOrNull() ?: return null
-            if (NetworkTargetPolicy.isNonPublic(address)) return null
-        } else if (!host.contains('.')) {
-            return null
-        }
+        if (!host.contains('.') && !isIpLiteral(host)) return null
+        // A hostname with a dot can still resolve to a private address; validate every A/AAAA
+        // record, otherwise a public-looking feed name is an SSRF into the local network.
+        val addresses = runCatching { InetAddress.getAllByName(host) }.getOrDefault(emptyArray())
+        // An unresolvable name is harmless here (the fetch itself fails); a name that resolves
+        // to a private address is the SSRF case we must reject.
+        if (addresses.any(NetworkTargetPolicy::isNonPublic)) return null
         return runCatching { uri.toASCIIString() }.getOrNull()
     }
 

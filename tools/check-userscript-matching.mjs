@@ -26,6 +26,13 @@ assert.equal(matchPattern("*://example.com/*", "http://example.com/a"), true);
 assert.equal(matchPattern("*://example.com/*", "ftp://example.com/a"), false);
 assert.equal(matchPattern("*:///*", "file:///tmp/a.html"), false);
 assert.equal(matchPattern("https://example.com/*", "not a url"), false);
+// Shorthand patterns without a scheme and explicit ports are valid Tampermonkey forms.
+assert.equal(matchPattern("example.com/*", "https://example.com/x"), true);
+assert.equal(matchPattern("*/foo*", "https://example.com/foobar"), true);
+assert.equal(matchPattern("*.example.com/foo*bar", "https://www.example.com/foo-X-bar"), true);
+assert.equal(matchPattern("https://example.com:8080/*", "https://example.com:8080/x"), true);
+assert.equal(matchPattern("https://example.com:8080/*", "https://example.com/x"), false);
+assert.equal(matchPattern("https://example.com/*", "https://example.com:8080/x"), true);
 
 assert.equal(includeMatches("https://example.com/*", "https://example.com/a?b=1"), true);
 assert.equal(includeMatches("/^https:\\/\\/example\\.com\\/\\d+$/", "https://example.com/42"), true);

@@ -780,13 +780,12 @@ class BrowserViewModel @Inject constructor(
         if (url != null) session.load(url)
         if (!isPrivate) {
             viewModelScope.launch {
-                tabRepository.saveTab(
+                tabRepository.insertTab(
                     TabEntity(
                         id = tab.id,
                         url = url,
                         groupId = groupId,
                         isPrivate = false,
-                        sortOrder = tabRepository.nextSortOrder(false),
                     ),
                 )
             }
@@ -813,13 +812,12 @@ class BrowserViewModel @Inject constructor(
         selectTab(tab.id)
         if (!isPrivate) {
             viewModelScope.launch {
-                tabRepository.saveTab(
+                tabRepository.insertTab(
                     TabEntity(
                         id = tab.id,
                         url = uri.takeIf { it.isNotBlank() && it != "about:blank" },
                         groupId = groupId,
                         isPrivate = false,
-                        sortOrder = tabRepository.nextSortOrder(false),
                     ),
                 )
             }

@@ -15,7 +15,9 @@ function globToRegExp(glob) {
 
 function matchPattern(pattern, url) {
   if (pattern === "<all_urls>") return /^(https?|file|ftp):/i.test(url);
-  const parsed = /^(\*|https?|file|ftp):\/\/(\*|\*\.[^/*]+|[^/*]*)(\/.*)$/i.exec(pattern);
+  // Tampermonkey/Violentmonkey allow shorthand patterns without a scheme (e.g. `example.com/*`).
+  const normalized = pattern.includes("://") ? pattern : "*://" + pattern.replace(/^\/+/, "/");
+  const parsed = /^(\*|https?|file|ftp):\/\/(\*|\*\.[^/*]+|[^/*]*)(\/.*)$/i.exec(normalized);
   if (!parsed) return false;
   let target;
   try {
@@ -31,7 +33,18 @@ function matchPattern(pattern, url) {
     return false;
   }
 
-  const host = parsed[2].toLowerCase();
+  let host = parsed[2].toLowerCase();
+  let patternPort = null;
+  const portMatch = /^(.*):(\d+)$/.exec(host);
+  if (portMatch) {
+    host = portMatch[1];
+    patternPort = Number(portMatch[2]);
+  }
+  if (patternPort !== null) {
+    const actualPort = target.port ? Number(target.port) :
+      (protocol === "https" ? 443 : protocol === "http" ? 80 : 0);
+    if (actualPort !== patternPort) return false;
+  }
   if (host !== "*") {
     const hostname = target.hostname.toLowerCase();
     if (host.startsWith("*.")) {

@@ -31,6 +31,16 @@ All notable changes to this project are documented in this file.
 - **Extensions.** AMO's "Add to Firefox" click is cancelled so it no longer triggers a duplicate `.xpi` download; autofill no longer steals focus or fills unrelated fields when the input has no `<form>`; reader mode stays off after a manual toggle on an auto-enabled site.
 - **UI.** The Cast and link sheets actually scroll, the shortcut dialog validates host input and supports the Done key, and the floating selection menu refreshes its Copy/Select-all items when the available actions change.
 
+### Third audit round
+
+- **Security:** RSS/Discover fetches no longer follow redirects blindly (every hop is revalidated and DNS is pinned at connect); resolved private addresses are rejected; Cast credentials are only forwarded to the exact origin and never downgraded from HTTPS to HTTP; addon installs no longer silently grant incognito access; blocked IP ranges now include `0.0.0.0/8`, IPv4-compatible IPv6 and 6to4.
+- **Userscripts:** shorthand `@match` patterns, explicit ports, localized `@name`/`@description` keys and `@exclude-match` now work; injection order is consistent after a reconnect.
+- **Discover:** caches store unfiltered results, so un-hiding an article or increasing the limit takes effect immediately.
+- **Updates:** a prerelease no longer beats a stable release of the same numeric version.
+- **Downloads:** literal `+` in filenames is preserved.
+- **Cast proxy:** DASH `BaseURL` rewriting handles attributes, whitespace and XML entities; publishing fails clearly when no routable LAN address exists.
+- **Database/preferences:** snippet edits no longer corrupt another row, parallel tab creation cannot duplicate sort order, transient DataStore errors no longer freeze all preferences, a saved locale survives an interrupted DataStore write, and shortcut rename/remove is case-insensitive. Schema export test now tracks the current database version.
+
 ## [0.78.4] - 2026-11-24
 
 ### Fixed

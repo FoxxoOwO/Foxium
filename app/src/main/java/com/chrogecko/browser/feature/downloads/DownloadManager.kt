@@ -394,7 +394,10 @@ class DownloadManager @Inject constructor(
             val fromHeader = disposition?.let(::dispositionFileName)
             val raw = fromHeader
                 ?: uri.substringBefore('#').substringBefore('?').substringAfterLast('/')
-            val decoded = runCatching { URLDecoder.decode(raw, "UTF-8") }.getOrDefault(raw)
+            // URLDecoder treats '+' as a space (form encoding); in URLs it is a literal plus.
+            val decoded = runCatching {
+                URLDecoder.decode(raw.replace("+", "%2B"), "UTF-8")
+            }.getOrDefault(raw)
             val safe = buildString(decoded.length) {
                 decoded.forEach { char ->
                     append(if (char.code < 32 || char in ILLEGAL_NAME_CHARS) '_' else char)

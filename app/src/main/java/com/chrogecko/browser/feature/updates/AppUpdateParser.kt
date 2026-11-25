@@ -135,7 +135,10 @@ object AppUpdateParser {
                 apkSizeBytes = apk.size,
                 releaseUrl = release.htmlUrl,
             )
-            if (best == null || compareVersions(candidate.versionName, best.versionName) > 0) {
+            val order = best?.let { compareVersions(candidate.versionName, it.versionName) } ?: 1
+            // `versionName` drops the prerelease suffix, so v1.2.3-rc1 ties with v1.2.3.
+            // Prefer the final release in that case instead of whichever GitHub listed first.
+            if (order > 0 || (order == 0 && best?.isPrerelease == true && !candidate.isPrerelease)) {
                 best = candidate
             }
         }

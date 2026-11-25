@@ -29,7 +29,7 @@ object UserScriptParser {
 
     private val METADATA_LINE =
         Regex("""^\s*(?://+|/\*+|\*+)?\s*@([A-Za-z0-9_:-]+)\s*(.*?)\s*(?:\*/)?\s*$""")
-    private val FILE_NAME_REGEX = Regex("""//\s*@name\s+(.+)""")
+    private val FILE_NAME_REGEX = Regex("""//\s*@name(?::[A-Za-z0-9-]+)?\s+(.+)""")
     private val INVALID_FILE_CHARS = Regex("""[\\/:*?"<>|]""")
 
     private const val START = "==UserScript=="
@@ -43,9 +43,11 @@ object UserScriptParser {
             )
 
         var name = ""
+        var localizedName = ""
         var namespace = ""
         var version = ""
         var description = ""
+        var localizedDescription = ""
         var runAt = ""
         var updateUrl: String? = null
         var downloadUrl: String? = null
@@ -58,17 +60,24 @@ object UserScriptParser {
 
         block.lineSequence().forEach { line ->
             val result = METADATA_LINE.matchEntire(line) ?: return@forEach
-            val key = result.groupValues[1].lowercase()
+            val rawKey = result.groupValues[1].lowercase()
+            // @name:zh-CN / @description:de are valid localized metadata keys.
+            val localizedKey = rawKey.contains(':')
+            val key = rawKey.substringBefore(':')
             val value = result.groupValues[2].trim()
             if (value.isEmpty()) return@forEach
             when (key) {
-                "name" -> if (name.isEmpty()) name = value
+                "name" -> if (localizedKey) {
+                    if (localizedName.isEmpty()) localizedName = value
+                } else if (name.isEmpty()) name = value
                 "namespace" -> if (namespace.isEmpty()) namespace = value
                 "version" -> if (version.isEmpty()) version = value
-                "description" -> if (description.isEmpty()) description = value
+                "description" -> if (localizedKey) {
+                    if (localizedDescription.isEmpty()) localizedDescription = value
+                } else if (description.isEmpty()) description = value
                 "match" -> matches += value
                 "include" -> includes += value
-                "exclude" -> excludes += value
+                "exclude", "exclude-match" -> excludes += value
                 "run-at" -> if (runAt.isEmpty()) runAt = value
                 "grant" -> if (!value.equals("none", ignoreCase = true)) grants += value
                 "require" -> requires += value
@@ -85,16 +94,17 @@ object UserScriptParser {
             }
         }
 
-        if (name.isBlank()) throw UserScriptParseException("Missing @name in metadata block")
+        val resolvedName = name.ifBlank { localizedName }
+        if (resolvedName.isBlank()) throw UserScriptParseException("Missing @name in metadata block")
         if (matches.isEmpty() && includes.isEmpty()) {
             throw UserScriptParseException("Script declares no @match or @include patterns")
         }
 
         return ParsedUserScript(
-            name = name,
-            namespace = namespace.ifBlank { name },
+            name = resolvedName,
+            namespace = namespace.ifBlank { resolvedName },
             version = version,
-            description = description,
+            description = description.ifBlank { localizedDescription },
             matchPatterns = matches.distinct(),
             includePatterns = includes.distinct(),
             excludePatterns = excludes.distinct(),

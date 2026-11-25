@@ -18,12 +18,18 @@ object NetworkTargetPolicy {
             bytes.size == 4 -> bytes
             bytes.size == 16 && bytes.copyOfRange(0, 10).all { it == 0.toByte() } &&
                 bytes[10] == 0xff.toByte() && bytes[11] == 0xff.toByte() -> bytes.copyOfRange(12, 16)
+            // IPv4-compatible ::a.b.c.d (not just ::ffff:a.b.c.d).
+            bytes.size == 16 && bytes.copyOfRange(0, 12).all { it == 0.toByte() } -> bytes.copyOfRange(12, 16)
+            // 2002::/16 6to4 embeds the IPv4 address in bytes 2..5.
+            bytes.size == 16 && bytes[0] == 0x20.toByte() && bytes[1] == 0x02.toByte() -> bytes.copyOfRange(2, 6)
             else -> null
         }
         if (v4 == null) return false
         val a = v4[0].toInt() and 0xff
         val b = v4[1].toInt() and 0xff
         return when {
+            a == 0 -> true // 0.0.0.0/8 routes to the local host on Linux/Android
+            a == 127 -> true // loopback, including IPv4-compatible ::127.0.0.1
             a == 100 && b in 64..127 -> true // 100.64.0.0/10 (CGNAT)
             a == 192 && b == 0 -> true // 192.0.0.0/24, 192.0.2.0/24
             a == 198 && (b == 18 || b == 19) -> true // 198.18.0.0/15
