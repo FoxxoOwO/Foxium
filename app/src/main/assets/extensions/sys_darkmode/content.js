@@ -64,6 +64,7 @@ input, textarea, select, button {
   let generation = 0;
   // Set when the page looked already-dark at DOMContentLoaded; re-check once styles finish loading.
   let skippedAsDark = false;
+  let appliedToLight = false;
   let observer = null;
   let mutationTimer = null;
   let pendingNodes = [];
@@ -132,10 +133,12 @@ input, textarea, select, button {
     } catch (error) {
       host = "";
     }
+    // The background page returns "off" whenever the global switch is off; content must mirror
+    // that policy or a later dark/apply broadcast would re-enable a stored per-site rule.
+    if (!cfg.enabled) return "off";
     const saved = ruleFor(host);
-    // An explicit per-site rule also works while the global switch is off.
     if (saved) return saved;
-    return cfg.enabled ? cfg.engine : "off";
+    return cfg.engine;
   }
 
   function parseColor(value) {
@@ -406,10 +409,12 @@ input, textarea, select, button {
       if (gen !== generation || mode !== "invert") return;
       if (pageLuminance() < 0.42) {
         skippedAsDark = true;
+        appliedToLight = false;
         report(true);
         return;
       }
       skippedAsDark = false;
+      appliedToLight = true;
       appendStyle(INVERT_CSS);
       document.documentElement.setAttribute("data-chrogecko-dark", "invert");
       report(false);
@@ -423,10 +428,12 @@ input, textarea, select, button {
       if (gen !== generation || mode !== "dynamic") return;
       if (pageLuminance() < 0.42) {
         skippedAsDark = true;
+        appliedToLight = false;
         report(true);
         return;
       }
       skippedAsDark = false;
+      appliedToLight = true;
       appendStyle(DYNAMIC_CSS);
       document.documentElement.setAttribute("data-chrogecko-dark", "dynamic");
       processAll(gen);
@@ -447,6 +454,8 @@ input, textarea, select, button {
     teardown();
     mode = nextMode;
     if (mode === "off") {
+      skippedAsDark = false;
+      appliedToLight = false;
       report(false);
       return;
     }
@@ -472,13 +481,16 @@ input, textarea, select, button {
 
   function recheckAfterLoad() {
     // A page can change its background after DOMContentLoaded (deferred CSS, SPA theming), or the
-    // first config request can race the native port. Re-ask and re-evaluate once styles settle.
-    if (skippedAsDark && mode !== "off") {
-      skippedAsDark = false;
-      teardown();
-      const gen = generation;
-      if (mode === "invert") applyInvert(gen);
-      else applyDynamic(gen);
+    // first config request can race the native port. Re-evaluate both directions: a dark page may
+    // become light, and a light page we inverted may become dark.
+    if (mode !== "off") {
+      const isDark = pageLuminance() < 0.42;
+      const needsReapply = isDark ? !skippedAsDark : !appliedToLight;
+      if (needsReapply) {
+        teardown();
+        skippedAsDark = false;
+        appliedToLight = false;
+      }
     }
     requestConfig();
   }
@@ -500,5 +512,5 @@ input, textarea, select, button {
     window.addEventListener("load", recheckAfterLoad, { once: true });
   }
   // bfcache / same-document navigations restore the page without re-running content scripts.
-  window.addEventListener("pageshow", requestConfig);
+  window.addEventListener("pageshow", recheckAfterLoad);
 })();

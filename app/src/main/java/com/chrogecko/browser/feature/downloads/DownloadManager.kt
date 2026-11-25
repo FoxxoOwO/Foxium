@@ -258,7 +258,15 @@ class DownloadManager @Inject constructor(
         _notificationPermissionRequests.tryEmit(Unit)
     }
 
+    private fun notificationsGranted(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+
     private fun notifyProgress(id: Long, fileName: String, written: Long, total: Long) {
+        if (!notificationsGranted()) return
         val manager = notificationManager ?: return
         val percent = if (total > 0) ((written * 100) / total).toInt().coerceIn(0, 100) else 0
         val cancel = PendingIntent.getBroadcast(

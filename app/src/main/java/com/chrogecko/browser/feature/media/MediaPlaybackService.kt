@@ -67,6 +67,11 @@ class MediaPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Notification actions use getService(), which can restart a killed service without the
+        // foreground contract. Guarantee a notification before handling any action.
+        if (!foreground && intent?.action != ACTION_STOP_SELF) {
+            startMinimalForeground()
+        }
         when (intent?.action) {
             ACTION_TOGGLE -> if (current?.playing == true) {
                 MediaPlayback.pause?.invoke()

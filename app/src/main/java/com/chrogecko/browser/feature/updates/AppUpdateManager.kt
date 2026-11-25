@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Call
@@ -97,6 +98,10 @@ class AppUpdateManager @Inject constructor(
 
     @Volatile
     private var activeCall: Call? = null
+
+    /** Distinguishes a user cancellation from a real network failure in the generic catch. */
+    @Volatile
+    private var cancelRequested = false
 
     private val notificationManager: NotificationManager? by lazy {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -193,12 +198,14 @@ class AppUpdateManager @Inject constructor(
     }
 
     fun cancelDownload() {
-        activeCall?.cancel()
+        cancelRequested = true
         downloadJob?.cancel()
+        activeCall?.cancel()
     }
 
     private suspend fun runDownload(update: AvailableUpdate) {
         var partFile: File? = null
+        cancelRequested = false
         try {
             _state.value = UpdateState.Downloading(
                 update = update,
@@ -209,7 +216,8 @@ class AppUpdateManager @Inject constructor(
             notifyProgress(update, 0L, update.apkSizeBytes)
 
             val apkFile = withContext(Dispatchers.IO) {
-                val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
+                // A completed APK must survive cache trimming until the user actually installs it.
+                val updatesDir = File(context.filesDir, "updates").apply { mkdirs() }
                 updatesDir.listFiles()?.forEach { oldFile ->
                     if (oldFile.isFile) oldFile.delete()
                 }
@@ -301,11 +309,15 @@ class AppUpdateManager @Inject constructor(
                 launchInstaller(apkFile)
             }
         } catch (ce: CancellationException) {
-            runCatching { partFile?.delete() }
-            cancelProgressNotification()
-            _state.value = UpdateState.Available(update = update, bannerDismissed = false)
+            restoreAvailableAfterCancel(update, partFile)
             throw ce
         } catch (t: Throwable) {
+            if (cancelRequested || !coroutineContext.isActive) {
+                // Cancelling OkHttp first makes read() throw IOException("Canceled"), which used to
+                // be reported as a download error instead of returning to the update prompt.
+                restoreAvailableAfterCancel(update, partFile)
+                throw CancellationException("Download cancelled")
+            }
             runCatching { partFile?.delete() }
             cancelProgressNotification()
             _state.value = UpdateState.Error(t.message ?: "Download failed")
@@ -321,7 +333,6 @@ class AppUpdateManager @Inject constructor(
             _state.value = UpdateState.Error("Update package missing")
             return false
         }
-        notificationManager?.cancel(READY_NOTIFICATION_ID)
         val canInstall = context.packageManager.canRequestPackageInstalls()
         val current = _state.value
         if (!canInstall) {
@@ -334,6 +345,7 @@ class AppUpdateManager @Inject constructor(
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             return try {
                 context.startActivity(permissionIntent)
+                notificationManager?.cancel(READY_NOTIFICATION_ID)
                 false
             } catch (error: ActivityNotFoundException) {
                 _state.value = UpdateState.Error(error.message ?: "Cannot open install settings")
@@ -357,6 +369,7 @@ class AppUpdateManager @Inject constructor(
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         return try {
             context.startActivity(installIntent)
+            notificationManager?.cancel(READY_NOTIFICATION_ID)
             true
         } catch (error: ActivityNotFoundException) {
             _state.value = UpdateState.Error(error.message ?: "No package installer found")
@@ -365,6 +378,19 @@ class AppUpdateManager @Inject constructor(
             _state.value = UpdateState.Error(error.message ?: "Cannot launch package installer")
             false
         }
+    }
+
+    /** Called by MainActivity when the "ready to install" notification is tapped. */
+    fun installFromNotification() {
+        val current = _state.value as? UpdateState.ReadyToInstall
+        if (current != null) {
+            launchInstaller(current.apkFile)
+            return
+        }
+        // Cold start: the singleton state is gone, but the finalized APK is still in filesDir.
+        val file = File(context.filesDir, "updates").listFiles()
+            ?.firstOrNull { it.isFile && it.name.endsWith(".apk", ignoreCase = true) }
+        if (file != null) launchInstaller(file)
     }
 
     suspend fun dismissUpdateBanner(tagName: String) {
@@ -390,7 +416,15 @@ class AppUpdateManager @Inject constructor(
         }
     }
 
+    private fun notificationsGranted(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+
     private fun notifyProgress(update: AvailableUpdate, downloaded: Long, total: Long) {
+        if (!notificationsGranted()) return
         val manager = notificationManager ?: return
         val percent = if (total > 0L) ((downloaded * 100L) / total).toInt().coerceIn(0, 100) else 0
         val text = if (total > 0L) {
@@ -411,6 +445,7 @@ class AppUpdateManager @Inject constructor(
     }
 
     private fun notifyReadyToInstall(update: AvailableUpdate) {
+        if (!notificationsGranted()) return
         val manager = notificationManager ?: return
         manager.cancel(PROGRESS_NOTIFICATION_ID)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
@@ -418,7 +453,7 @@ class AppUpdateManager @Inject constructor(
             .setContentTitle(context.getString(R.string.update_notification_ready_title, update.versionName))
             .setContentText(context.getString(R.string.update_notification_ready_text))
             .setAutoCancel(true)
-            .setContentIntent(contentIntent())
+            .setContentIntent(readyNotificationIntent())
             .build()
         runCatching { manager.notify(READY_NOTIFICATION_ID, notification) }
     }
@@ -427,10 +462,23 @@ class AppUpdateManager @Inject constructor(
         notificationManager?.cancel(PROGRESS_NOTIFICATION_ID)
     }
 
+    private fun restoreAvailableAfterCancel(update: AvailableUpdate, partFile: File?) {
+        runCatching { partFile?.delete() }
+        cancelProgressNotification()
+        _state.value = UpdateState.Available(update = update, bannerDismissed = false)
+    }
+
     private fun contentIntent(): PendingIntent = PendingIntent.getActivity(
         context,
         CONTENT_INTENT_REQUEST_CODE,
         Intent(context, MainActivity::class.java),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    private fun readyNotificationIntent(): PendingIntent = PendingIntent.getActivity(
+        context,
+        INSTALL_INTENT_REQUEST_CODE,
+        Intent(context, MainActivity::class.java).setAction(ACTION_INSTALL_UPDATE),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
@@ -442,5 +490,7 @@ class AppUpdateManager @Inject constructor(
         private const val PROGRESS_NOTIFICATION_ID = 70001
         private const val READY_NOTIFICATION_ID = 70002
         private const val CONTENT_INTENT_REQUEST_CODE = 70003
+        private const val INSTALL_INTENT_REQUEST_CODE = 70004
+        const val ACTION_INSTALL_UPDATE = "com.chrogecko.browser.action.INSTALL_UPDATE"
     }
 }

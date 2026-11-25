@@ -230,6 +230,10 @@
         const text = String(node.textContent || "").trim();
         const href = String(node.getAttribute && node.getAttribute("href") || "");
         if (ADD_TO_FIREFOX.test(text) || href.includes(".xpi")) {
+          // Let the browser install it once; otherwise AMO's own handler still starts an .xpi
+          // download alongside our native installer.
+          event.preventDefault();
+          event.stopPropagation();
           browser.runtime
             .sendMessage({ type: "amo/install", url: location.href })
             .catch(() => {});

@@ -312,7 +312,7 @@ private fun ChromeBrowserContent(
 
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) {}
+    ) { granted -> viewModel.onNotificationPermissionResult(granted) }
     LaunchedEffect(printFile) {
         val pdf = printFile ?: return@LaunchedEffect
         printPdf(context, activeTab?.state?.title.orEmpty(), pdf)

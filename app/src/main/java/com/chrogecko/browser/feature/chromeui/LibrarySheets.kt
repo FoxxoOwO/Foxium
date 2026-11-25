@@ -79,7 +79,12 @@ fun LinkListSheet(
         if (filtered.isEmpty()) {
             EmptyRow(if (items.isEmpty()) stringResource(R.string.nothing_here_yet) else stringResource(R.string.no_matches))
         }
-        Column(Modifier.verticalScroll(rememberScrollState())) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+        ) {
             filtered.forEach { (label, url) ->
                 LinkRow(label, url, icons, onOpen)
                 HorizontalDivider()

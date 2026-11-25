@@ -436,6 +436,7 @@
     <string name="settings_suggestions_history_desc">Include matching browsing history in suggestions</string>
     <string name="msg_invalid_url">Invalid URL</string>
     <string name="msg_download_empty_response">The server returned an empty response</string>
+    <string name="msg_notifications_disabled">Notifications are off — keep this dialog open to control the download</string>
     <string name="pull_refresh_hint">Pull to reload</string>
     <string name="pull_refresh_release">Release to reload</string>
     <string name="discover_source_best">Best</string>

@@ -117,7 +117,8 @@ class MirrorCaptureService : Service() {
             mirrorHandler,
         )
         projection = capture
-        MirrorFrames.markRunning()
+        // markRunning() is deferred until the virtual display exists; watchMirror() and the
+        // UI use it as the signal that the LAN mirror URL is actually servable.
         startCapture(capture, mirrorHandler)
         return START_NOT_STICKY
     }
@@ -156,17 +157,28 @@ class MirrorCaptureService : Service() {
                 image.close()
             }
         }, mirrorHandler)
-        virtualDisplay = capture.createVirtualDisplay(
-            "chrogecko-mirror",
-            width,
-            height,
-            metrics.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader.surface,
-            null,
-            mirrorHandler,
-        )
-        Log.i(TAG, "virtual display=${virtualDisplay?.display?.displayId} ${width}x$height")
+        val display = runCatching {
+            capture.createVirtualDisplay(
+                "chrogecko-mirror",
+                width,
+                height,
+                metrics.densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader.surface,
+                null,
+                mirrorHandler,
+            )
+        }.getOrNull()
+        if (display == null) {
+            Log.w(TAG, "cannot create virtual display")
+            imageReader.close()
+            release()
+            stopSelf()
+            return
+        }
+        virtualDisplay = display
+        MirrorFrames.markRunning()
+        Log.i(TAG, "virtual display=${display.display?.displayId} ${width}x$height")
     }
 
     private fun Image.toJpeg(width: Int, height: Int): ByteArray? = runCatching {
@@ -290,25 +302,11 @@ class MirrorCaptureService : Service() {
             val intent = Intent(context, MirrorCaptureService::class.java)
                 .putExtra(EXTRA_RESULT_CODE, resultCode)
                 .putExtra(EXTRA_DATA, data)
-            // The consent activity may still be finishing, so a foreground start can be
-            // rejected for a few hundred ms; retry instead of dropping the projection.
-            attemptStart(context, intent, ATTEMPTS)
-        }
-
-        private const val ATTEMPTS = 5
-
-        private fun attemptStart(context: Context, intent: Intent, remaining: Int) {
+            // The consent Intent grants a single-use MediaProjection token. Retrying with the
+            // same token can fail with SecurityException, so start once and let the user grant
+            // consent again from the Cast menu if this launch is rejected.
             runCatching { context.startForegroundService(intent) }
-                .onSuccess { return }
-                .onFailure { error ->
-                    Log.w(TAG, "cannot start service: ${error.message}")
-                    if (remaining > 1) {
-                        Handler(Looper.getMainLooper()).postDelayed(
-                            { attemptStart(context, intent, remaining - 1) },
-                            400,
-                        )
-                    }
-                }
+                .onFailure { error -> Log.w(TAG, "cannot start service: ${error.message}") }
         }
     }
 }

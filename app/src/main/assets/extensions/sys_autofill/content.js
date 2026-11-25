@@ -91,7 +91,10 @@ function formFields(scopeOrField) {
   if (!scopeOrField) return [];
   const scope = (scopeOrField.nodeType === 9 || scopeOrField.tagName === "FORM")
     ? scopeOrField
-    : (scopeOrField.form || scopeOrField.ownerDocument || document);
+    : (scopeOrField.form ||
+       (typeof scopeOrField.querySelectorAll === "function"
+         ? scopeOrField
+         : (scopeOrField.ownerDocument || document)));
   return Array.from(scope.querySelectorAll("input, select, textarea")).filter(isFillable);
 }
 
@@ -106,7 +109,8 @@ function tokensOf(fields) {
 
 function setValue(field, value) {
   if (!field || value === undefined || value === null) return;
-  field.focus();
+  // Focusing each field fired focusin for every value and re-opened the suggestion strip;
+  // blurring the last one also hid the keyboard. Only write through the prototype setter.
   const stringValue = String(value);
   const proto = field.tagName === "TEXTAREA"
     ? HTMLTextAreaElement.prototype
@@ -121,18 +125,21 @@ function setValue(field, value) {
   }
   field.dispatchEvent(new Event("input", { bubbles: true }));
   field.dispatchEvent(new Event("change", { bubbles: true }));
-  field.blur();
 }
 
 let lastSignature = "";
 let lastFocusedForm = null;
+let lastFocusedField = null;
+let filling = false;
 
 function reportFocus(event) {
+  if (filling) return;
   const field = event.target;
   if (!isFillable(field)) return;
   const focusToken = guessToken(field);
   if (!focusToken) return;
   lastFocusedForm = field.form || null;
+  lastFocusedField = field;
   const fields = formFields(field);
   const tokens = tokensOf(fields);
   const kind = tokens.some((token) => CARD_TOKENS.includes(token)) ? "card" : "address";
@@ -157,13 +164,23 @@ browser.runtime.onMessage.addListener((message) => {
   if (!message || message.type !== "autofill/fill") return;
   const values = message.values || {};
   const active = document.activeElement;
-  const remembered = lastFocusedForm && lastFocusedForm.isConnected !== false ? lastFocusedForm : null;
-  const scope = (active && active.form) || remembered || document;
-  const fields = formFields(scope);
-  for (const field of fields) {
-    const token = guessToken(field);
-    if (token && values[token] !== undefined) setValue(field, values[token]);
+  const remembered = lastFocusedField && lastFocusedField.isConnected !== false ? lastFocusedField : null;
+  const scope = (active && active.form) ||
+    (remembered && remembered.form) ||
+    (remembered && remembered.closest("form, [data-autofill-scope]")) ||
+    (remembered && remembered.parentElement) ||
+    document;
+  filling = true;
+  try {
+    const fields = formFields(scope);
+    for (const field of fields) {
+      const token = guessToken(field);
+      if (token && values[token] !== undefined) setValue(field, values[token]);
+    }
+  } finally {
+    filling = false;
+    lastFocusedField = null;
+    lastFocusedForm = null;
+    lastSignature = "";
   }
-  lastFocusedForm = null;
-  lastSignature = "";
 });

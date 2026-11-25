@@ -16,8 +16,17 @@ function makeField(attrs, form) {
     getAttribute(name) {
       return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null;
     },
-    focus() {},
-    blur() {},
+    focusCount: 0,
+    blurCount: 0,
+    focus() {
+      this.focusCount += 1;
+    },
+    blur() {
+      this.blurCount += 1;
+    },
+    closest() {
+      return null;
+    },
     dispatchEvent(event) {
       events.push(event.type);
     },
@@ -39,6 +48,24 @@ function makeForm(id, fieldSpecs) {
   return form;
 }
 
+function makeContainer(id, fieldSpecs) {
+  const container = {
+    tagName: "DIV",
+    id,
+    isConnected: true,
+    fields: [],
+    querySelectorAll() {
+      return container.fields;
+    },
+  };
+  container.fields = fieldSpecs.map((spec) => {
+    const field = makeField(spec, null);
+    field.parentElement = container;
+    return field;
+  });
+  return container;
+}
+
 function runHarness() {
   const docListeners = new Map();
   const messageListeners = [];
@@ -56,6 +83,7 @@ function runHarness() {
   ]);
 
   const body = { tagName: "BODY" };
+  const allFields = [...shippingForm.fields, ...billingForm.fields];
   const document = {
     activeElement: body,
     body,
@@ -64,12 +92,10 @@ function runHarness() {
       docListeners.get(type).push(fn);
     },
     querySelectorAll() {
-      return [...shippingForm.fields, ...billingForm.fields];
+      return allFields;
     },
   };
-  for (const field of [...shippingForm.fields, ...billingForm.fields]) {
-    field.ownerDocument = document;
-  }
+  for (const field of allFields) field.ownerDocument = document;
 
   function dispatchDoc(type, event) {
     for (const fn of docListeners.get(type) || []) fn(event);
@@ -136,6 +162,30 @@ function runHarness() {
   assert.equal(billingForm.fields[0].value, "");
   assert.equal(billingForm.fields[1].value, "");
   assert.equal(billingForm.fields[2].value, "");
+
+  // Filling must not steal focus: focus() would fire focusin and re-open the suggestion strip.
+  for (const field of [...shippingForm.fields, ...billingForm.fields]) {
+    assert.equal(field.focusCount, 0);
+    assert.equal(field.blurCount, 0);
+  }
+
+  // A standalone input (no <form>) must only fill its own container, not the whole document.
+  const standalone = makeContainer("standalone", [
+    { autocomplete: "email", type: "email" },
+  ]);
+  const unrelated = makeContainer("unrelated", [
+    { autocomplete: "name", type: "text" },
+  ]);
+  allFields.push(...standalone.fields, ...unrelated.fields);
+  for (const field of [...standalone.fields, ...unrelated.fields]) field.ownerDocument = document;
+
+  document.activeElement = standalone.fields[0];
+  dispatchDoc("focusin", { target: standalone.fields[0] });
+  document.activeElement = body;
+  dispatchDoc("focusout", { target: standalone.fields[0] });
+  dispatchMessage({ type: "autofill/fill", values: { email: "standalone@example.com", name: "Wrong" } });
+  assert.equal(standalone.fields[0].value, "standalone@example.com");
+  assert.equal(unrelated.fields[0].value, "");
 }
 
 runHarness();

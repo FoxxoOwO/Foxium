@@ -113,6 +113,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebResponse
@@ -726,7 +727,23 @@ class BrowserViewModel @Inject constructor(
         appUpdateManager.startDownload(update)
     }
 
-    fun hideUpdateDownloadToBackground() = appUpdateManager.hideDownloadToBackground()
+    @Volatile
+    private var notificationsAvailable = true
+
+    fun onNotificationPermissionResult(granted: Boolean) {
+        notificationsAvailable = granted
+        if (!granted) {
+            viewModelScope.launch {
+                _messages.emit(localizedString(R.string.msg_notifications_disabled))
+            }
+        }
+    }
+
+    fun hideUpdateDownloadToBackground() {
+        // Without notifications there is no way to get back to a background download.
+        if (!notificationsAvailable) return
+        appUpdateManager.hideDownloadToBackground()
+    }
 
     fun cancelUpdateDownload() = appUpdateManager.cancelDownload()
 
@@ -1866,7 +1883,19 @@ class BrowserViewModel @Inject constructor(
 
     fun publishMirror() {
         viewModelScope.launch {
-            _mirrorUrl.value = cast.publishMirror()
+            // The consent result only authorizes a projection; the service can still fail to
+            // start, acquire MediaProjection or create the virtual display. Publishing early
+            // would leave a dead LAN URL in the UI.
+            val started = withTimeoutOrNull(4_000L) {
+                com.chrogecko.browser.feature.cast.MirrorFrames.running.first { it }
+                true
+            } ?: false
+            if (!started) {
+                _messages.tryEmit(localizedString(R.string.msg_cast_failed))
+                return@launch
+            }
+            runCatching { _mirrorUrl.value = cast.publishMirror() }
+                .onFailure { _messages.tryEmit(localizedString(R.string.msg_cast_failed)) }
         }
     }
 

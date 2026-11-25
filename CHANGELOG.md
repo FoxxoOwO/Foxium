@@ -21,6 +21,16 @@ All notable changes to this project are documented in this file.
 - **Browser UI.** Omnibox history/bookmark suggestions stay fresh while browsing; the Undo snackbar now refreshes when a second tab is closed; Discover fetches cancel older overlapping requests; back gestures read live UI state; revisiting the same URL in a different tab is recorded in history; voice search clears real keyboard focus.
 - **Downloads.** A successful HTTP response with no body now creates a visible failed row instead of silently doing nothing.
 
+### Second audit round
+
+- **Update flow.** Cancelling a download returns to the update prompt instead of showing `Error("Canceled")`; the finished APK lives in `filesDir` so cache trimming cannot remove it; the "ready to install" notification now launches the installer (also after a cold start) and is only dismissed once an installer or Settings activity actually opened. Notification permission denial is reported and no longer lets the user hide the only remaining download UI.
+- **WebAuthn.** A second overlapping request is rejected instead of reusing the single Activity-result launcher, so one request cannot be completed with another request's assertion.
+- **Screen mirroring.** The LAN mirror URL is published only after a live virtual display exists; a failed projection no longer leaves a dead URL, and the single-use consent token is not retried.
+- **Media playback.** Notification actions guarantee foreground-service state, preventing a service with no notification.
+- **Dark mode.** Global off is honored even with saved per-site rules, and pages that change luminance after load are re-evaluated in both directions.
+- **Extensions.** AMO's "Add to Firefox" click is cancelled so it no longer triggers a duplicate `.xpi` download; autofill no longer steals focus or fills unrelated fields when the input has no `<form>`; reader mode stays off after a manual toggle on an auto-enabled site.
+- **UI.** The Cast and link sheets actually scroll, the shortcut dialog validates host input and supports the Done key, and the floating selection menu refreshes its Copy/Select-all items when the available actions change.
+
 ## [0.78.4] - 2026-11-24
 
 ### Fixed

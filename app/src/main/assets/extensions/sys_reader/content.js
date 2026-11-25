@@ -196,7 +196,8 @@ function report(type, extra) {
 function toggle() {
   if (active) {
     restore();
-    report("reader/state");
+    // A manual off must not be immediately undone by the auto-activation rule.
+    report("reader/state", { userInitiated: true });
     return { active: active };
   }
   const parsed = parseArticle();

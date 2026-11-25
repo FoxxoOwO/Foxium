@@ -422,7 +422,12 @@ fun CastSheet(
         if (media.isEmpty()) {
             EmptyRow(stringResource(R.string.cast_empty_media))
         }
-        Column(Modifier.verticalScroll(rememberScrollState())) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+        ) {
             media.forEach { item ->
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),

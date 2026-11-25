@@ -52,4 +52,14 @@ const withRules = await runtimeListener(
   { tab: { id: 1, url: "https://example.com/page" } },
 );
 assert.ok(withRules.rules && typeof withRules.rules === "object");
+
+// The content script must apply the same global-off policy as background.modeFor(): a stored
+// per-site rule may not be re-enabled by a later dark/apply broadcast while the switch is off.
+const contentSource = readFileSync(new URL("content.js", base), "utf8");
+assert.match(
+  contentSource,
+  /if\s*\(!cfg\.enabled\)\s*return\s+"off";[\s\S]{0,160}ruleFor\(host\)/,
+  "content must short-circuit to off before consulting per-site rules",
+);
+
 console.log("darkmode checks passed");

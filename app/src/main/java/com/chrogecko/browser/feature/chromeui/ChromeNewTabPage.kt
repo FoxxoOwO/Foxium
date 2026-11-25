@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -55,6 +57,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -465,6 +469,17 @@ private fun RenameShortcutDialog(
 @Composable
 private fun AddShortcutDialog(onAdd: (String) -> Unit, onDismiss: () -> Unit) {
     var url by remember { mutableStateOf("") }
+    // Only host-like input becomes a visible tile; a search phrase would resolve to the search
+    // engine's domain and would show the wrong site.
+    val looksLikeHost = url.contains('.') && !url.contains(' ')
+    val normalized = if (looksLikeHost) normalizeOmniboxInput(url) else ""
+    val canAdd = normalized.startsWith("http://") || normalized.startsWith("https://")
+    val submit = {
+        if (canAdd) {
+            onAdd(normalized)
+            onDismiss()
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.add_shortcut)) },
@@ -474,11 +489,16 @@ private fun AddShortcutDialog(onAdd: (String) -> Unit, onDismiss: () -> Unit) {
                 onValueChange = { url = it.trim() },
                 label = { Text(stringResource(R.string.ntp_site_address)) },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Uri,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { submit() }),
                 modifier = Modifier.fillMaxWidth(),
             )
         },
         confirmButton = {
-            TextButton(onClick = { onAdd(url) }, enabled = url.isNotBlank()) {
+            TextButton(onClick = { submit() }, enabled = canAdd) {
                 Text(stringResource(R.string.add))
             }
         },

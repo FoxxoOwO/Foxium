@@ -423,6 +423,8 @@ internal fun NativeSelectionMenu(
     val currentOnCopy by rememberUpdatedState(onCopy)
     val currentOnSearchWeb by rememberUpdatedState(onSearchWeb)
     val currentText by rememberUpdatedState(selection?.text.orEmpty())
+    val currentCanCopy by rememberUpdatedState(selection?.canCopy == true)
+    val currentCanSelectAll by rememberUpdatedState(selection?.canSelectAll == true)
     val currentOnShare by rememberUpdatedState(onShare)
     val currentOnSelectAll by rememberUpdatedState(onSelectAll)
     val currentOnDismiss by rememberUpdatedState(onDismiss)
@@ -455,12 +457,17 @@ internal fun NativeSelectionMenu(
         }
         selectionRect = current.screenRect
         if (callback != null && actionMode != null) {
-            actionMode?.invalidateContentRect()
+            // Gecko can emit another selection while the ActionMode is open with different
+            // available actions; rebuild the menu instead of keeping the first snapshot.
+            val existing = actionMode ?: return@LaunchedEffect
+            existing.menu.clear()
+            callback?.onCreateActionMode(existing, existing.menu)
+            existing.invalidateContentRect()
             return@LaunchedEffect
         }
         val created = object : ActionMode.Callback2() {
             override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-                if (current.canCopy) {
+                if (currentCanCopy) {
                     menu.add(R.string.copy).setOnMenuItemClickListener {
                         currentOnCopy()
                         true
@@ -470,7 +477,7 @@ internal fun NativeSelectionMenu(
                     currentOnSearchWeb(currentText)
                     true
                 }
-                if (current.canSelectAll) {
+                if (currentCanSelectAll) {
                     menu.add(R.string.select_all).setOnMenuItemClickListener {
                         currentOnSelectAll()
                         true

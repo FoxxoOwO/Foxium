@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import com.chrogecko.browser.core.engine.ChroGeckoRuntime
 import com.chrogecko.browser.core.preferences.AppLocaleManager
 import com.chrogecko.browser.feature.chromeui.ChromeBrowserScreen
+import com.chrogecko.browser.feature.updates.AppUpdateManager
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.CancellationException
 import javax.inject.Inject
@@ -26,6 +27,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var chroGeckoRuntime: ChroGeckoRuntime
+
+    @Inject
+    lateinit var appUpdateManager: AppUpdateManager
 
     /** Links handed over by other apps (and by pinned shortcuts); cleared once navigated. */
     private val externalUrl = MutableStateFlow<String?>(null)
@@ -47,9 +51,15 @@ class MainActivity : ComponentActivity() {
     private val runtimeActivityDelegate = GeckoRuntime.ActivityDelegate { pendingIntent ->
         val geckoResult = GeckoResult<Intent>()
         runOnUiThread {
-            pendingWebAuthnResult?.completeExceptionally(
-                CancellationException("Superseded by a new WebAuthn request"),
-            )
+            // The single ActivityResult callback can only answer one request. Failing the older
+            // request and reusing the launcher would let the first assertion complete the second
+            // request, so reject the new one instead while a request is in flight.
+            if (pendingWebAuthnResult != null) {
+                geckoResult.completeExceptionally(
+                    CancellationException("Another WebAuthn request is already in progress"),
+                )
+                return@runOnUiThread
+            }
             pendingWebAuthnResult = geckoResult
             runCatching {
                 webAuthnLauncher.launch(
@@ -77,6 +87,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         chroGeckoRuntime.runtime.activityDelegate = runtimeActivityDelegate
+        if (intent?.action == AppUpdateManager.ACTION_INSTALL_UPDATE) {
+            appUpdateManager.installFromNotification()
+            // Avoid re-launching the installer after a configuration change.
+            intent?.let { setIntent(Intent(it).setAction(null)) }
+        }
         enableEdgeToEdge()
         // Read the intent even when saved state exists: after process death Android restores the
         // activity with a non-null Bundle but does not call onNewIntent, so an ACTION_VIEW link

@@ -217,6 +217,29 @@ function runHarness() {
   assert.equal(centerSelect.defaultPrevented, false);
   assert.equal(selectionCollapsed, false);
   assert.equal(selectionClearedCount, 0);
+
+  // 8. AMO's "Add to Firefox" must be consumed so its own .xpi download never starts.
+  sandbox.location.href = "https://addons.mozilla.org/en-US/firefox/addon/example/";
+  const amoNode = {
+    textContent: "Add to Firefox",
+    getAttribute: () => null,
+    parentElement: null,
+  };
+  const clickEvent = {
+    target: amoNode,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopPropagation() {
+      this.stopped = true;
+    },
+  };
+  messages.length = 0;
+  dispatch(windowListeners, "click", clickEvent);
+  assert.equal(messages.filter((m) => m.type === "amo/install").length, 1);
+  assert.equal(clickEvent.defaultPrevented, true);
+  assert.equal(clickEvent.stopped, true);
 }
 
 runHarness();

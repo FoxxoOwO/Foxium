@@ -82,7 +82,8 @@ class ReaderModeFeature @Inject constructor(
                     next
                 }
                 val host = payload.optString("host").trim().lowercase().removePrefix("www.")
-                if (available && !active && host.isNotBlank() && host in autoHosts) {
+                val userInitiated = payload.optBoolean("userInitiated", false)
+                if (!userInitiated && available && !active && host.isNotBlank() && host in autoHosts) {
                     post("reader/activate", payload.optInt("tabId", -1))
                 }
             }
