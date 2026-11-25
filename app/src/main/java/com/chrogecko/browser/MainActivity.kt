@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.content.IntentCompat
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,40 +40,46 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             val pending = pendingWebAuthnResult ?: return@registerForActivityResult
             pendingWebAuthnResult = null
-            if (result.resultCode == RESULT_OK && result.data != null) {
-                pending.complete(result.data)
-            } else {
-                pending.completeExceptionally(
+            val data = result.data
+            // The platform/GMS failure is delivered as a serializable extra; surface it so the
+            // page sees the real NotAllowedError/SecurityError instead of a generic cancellation.
+            val error = data?.let {
+                runCatching {
+                    IntentCompat.getSerializableExtra(
+                        it,
+                        "androidx.activity.result.contract.extra.ACTIVITY_RESULT_ERROR",
+                        Throwable::class.java,
+                    )
+                }.getOrNull()
+            }
+            when {
+                error != null -> pending.completeExceptionally(error)
+                result.resultCode == RESULT_OK -> pending.complete(data)
+                else -> pending.completeExceptionally(
                     CancellationException("WebAuthn cancelled (code=${result.resultCode})"),
                 )
             }
         }
 
     private val runtimeActivityDelegate = GeckoRuntime.ActivityDelegate { pendingIntent ->
-        val geckoResult = GeckoResult<Intent>()
-        runOnUiThread {
-            // The single ActivityResult callback can only answer one request. Failing the older
-            // request and reusing the launcher would let the first assertion complete the second
-            // request, so reject the new one instead while a request is in flight.
-            if (pendingWebAuthnResult != null) {
-                geckoResult.completeExceptionally(
-                    CancellationException("Another WebAuthn request is already in progress"),
-                )
-                return@runOnUiThread
-            }
-            pendingWebAuthnResult = geckoResult
-            runCatching {
+        // Matches the official GeckoView example: launch first, then create and store the result.
+        // The delegate is @UiThread already, so no extra UI posting (which could race onDestroy).
+        if (pendingWebAuthnResult != null) {
+            GeckoResult.fromException<Intent>(
+                IllegalStateException("Another WebAuthn request is already in progress"),
+            )
+        } else {
+            val geckoResult = GeckoResult<Intent>()
+            try {
                 webAuthnLauncher.launch(
                     IntentSenderRequest.Builder(pendingIntent.intentSender).build(),
                 )
-            }.onFailure { error ->
-                if (pendingWebAuthnResult === geckoResult) {
-                    pendingWebAuthnResult = null
-                }
-                geckoResult.completeExceptionally(error)
+                pendingWebAuthnResult = geckoResult
+                geckoResult
+            } catch (error: IllegalStateException) {
+                GeckoResult.fromException<Intent>(error)
             }
         }
-        geckoResult
     }
 
     override fun attachBaseContext(newBase: Context) {

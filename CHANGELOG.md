@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### WebAuthn / passkeys
+
+- **Release builds:** added a ProGuard rule keeping GMS FIDO2 Parcelable class names, which R8 otherwise renames (Mozilla Bug 2093295). GeckoView 146 predates Mozilla's own fix.
+- **Diagnostics:** the Activity-result callback now propagates the real platform/GMS error instead of a generic cancellation, and the delegate follows the official GeckoView ordering (launch first, then create/store the result).
+- **Limit (external):** arbitrary passkey sites still require Foxium to be on Google's privileged-browser allowlist and the signing key on the FIDO2 privileged allowlist. Those approvals cannot be done in code.
+
 ### Performance
 
 - **Discover:** fetches at most a bounded oversample of items per source instead of 200, sources are fetched in parallel outside the cache mutex, and the redundant second DNS lookup was removed (~800 HTTP calls and ~1,600 DNS lookups per cache miss before).
