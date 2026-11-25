@@ -41,6 +41,13 @@ All notable changes to this project are documented in this file.
 - **Cast proxy:** DASH `BaseURL` rewriting handles attributes, whitespace and XML entities; publishing fails clearly when no routable LAN address exists.
 - **Database/preferences:** snippet edits no longer corrupt another row, parallel tab creation cannot duplicate sort order, transient DataStore errors no longer freeze all preferences, a saved locale survives an interrupted DataStore write, and shortcut rename/remove is case-insensitive. Schema export test now tracks the current database version.
 
+### Fourth audit round
+
+- **Engine:** displays are no longer stolen reflectively from an old GeckoView (avoids "Display already acquired" and orphaned surfaces); a session is deactivated before closing so its newest history/scroll state is flushed; built-in extensions use idempotent `ensureBuiltIn`, and native-messaging delegates are tracked per extension instance so a fresh instance still receives messages.
+- **ViewModel:** closing a tab clears its prompt/permission dialogs before the observer is cancelled; popups from incognito tabs stay incognito; tabs created during restore are preserved instead of leaking their sessions; `.user.js#fragment` opens the installer; child tabs inherit the current group; bookmark star refreshes after delete/import; clearing history resets the per-tab visit guards; mirror publishing is invalidated by a Stop in flight.
+- **UI/media:** the one-shot omnibox focus request survives the focus guard; the user's text in the script editor is refreshed when the script changes; media notification follows the tab that actually started playing and survives service start/stop races; Discover RSS quota is based on feeds that returned data; the Cast sheet no longer lists duplicate media from other tabs on the same URL.
+- **Regression fix:** the RSS URL validator no longer performs DNS on the UI thread; address validation moved to the IO fetch path.
+
 ## [0.78.4] - 2026-11-24
 
 ### Fixed

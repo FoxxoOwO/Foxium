@@ -8,6 +8,7 @@ import com.chrogecko.browser.feature.favicons.faviconHost
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.net.InetAddress
 import java.net.URI
 import java.net.UnknownHostException
 import java.util.concurrent.ConcurrentHashMap
@@ -115,7 +116,14 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
                 }
             }.awaitAll()
         }
-        val maxPerHost = if (rssFeeds.size <= 1) limit else maxOf(2, (limit + rssFeeds.size - 1) / rssFeeds.size)
+        // Base the quota on feeds that actually returned items; otherwise three broken feeds out
+        // of four would starve the surviving one down to a handful of cards.
+        val activeFeeds = merged.count { it.isNotEmpty() }.coerceAtLeast(1)
+        val maxPerHost = if (activeFeeds == 1) {
+            limit
+        } else {
+            maxOf(2, (limit + activeFeeds - 1) / activeFeeds)
+        }
         DiscoverMerger.merge(merged, hidden, limit, maxPerHost = maxPerHost, interleave = true)
     }
 
@@ -165,6 +173,14 @@ class DiscoverRepository @Inject constructor(private val client: OkHttpClient) {
         for (attempt in 0 until MAX_REDIRECTS) {
             val safe = RssFeedParser.normalizeFeedUrl(current)
                 ?: throw IOException("Blocked URL: $current")
+            // A public-looking hostname may still resolve into the local network. Validate
+            // every resolved address here (IO thread), not in the UI-facing URL validator.
+            val host = runCatching { URI(safe).host }.getOrNull()
+                ?: throw IOException("Invalid URL: $safe")
+            val addresses = runCatching { InetAddress.getAllByName(host) }.getOrDefault(emptyArray())
+            if (addresses.isEmpty() || addresses.any(NetworkTargetPolicy::isNonPublic)) {
+                throw IOException("Blocked non-public feed host: $host")
+            }
             val request = Request.Builder().url(safe).header("Accept", accept).build()
             safeClient.newCall(request).execute().use { response ->
                 val location = response.header("Location")

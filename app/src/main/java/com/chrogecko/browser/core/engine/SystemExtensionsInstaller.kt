@@ -21,8 +21,10 @@ class SystemExtensionsInstaller @Inject constructor(
     fun installAll() {
         chroGeckoRuntime.warmUp()
         val controller = chroGeckoRuntime.runtime.webExtensionController
-        for (path in BUILT_IN_EXTENSIONS) {
-            controller.installBuiltIn(path).accept(
+        for ((path, id) in BUILT_IN_EXTENSIONS) {
+            // ensureBuiltIn is idempotent: a fresh install on every process start restarts the
+            // background scripts and races with native port setup for no benefit.
+            controller.ensureBuiltIn(path, id).accept(
                 { extension ->
                     if (extension != null) {
                         bridge.register(extension)
@@ -52,13 +54,13 @@ class SystemExtensionsInstaller @Inject constructor(
         private const val TAG = "ChroGeckoExtensions"
 
         val BUILT_IN_EXTENSIONS = listOf(
-            "resource://android/assets/extensions/sys_userscripts/",
-            "resource://android/assets/extensions/sys_darkmode/",
-            "resource://android/assets/extensions/sys_mediasniffer/",
-            "resource://android/assets/extensions/sys_gestures/",
-            "resource://android/assets/extensions/sys_autofill/",
-            "resource://android/assets/extensions/sys_expander/",
-            "resource://android/assets/extensions/sys_reader/",
+            "resource://android/assets/extensions/sys_userscripts/" to SystemExtensionIds.USERSCRIPTS,
+            "resource://android/assets/extensions/sys_darkmode/" to SystemExtensionIds.DARKMODE,
+            "resource://android/assets/extensions/sys_mediasniffer/" to SystemExtensionIds.MEDIASNIFFER,
+            "resource://android/assets/extensions/sys_gestures/" to SystemExtensionIds.GESTURES,
+            "resource://android/assets/extensions/sys_autofill/" to SystemExtensionIds.AUTOFILL,
+            "resource://android/assets/extensions/sys_expander/" to SystemExtensionIds.EXPANDER,
+            "resource://android/assets/extensions/sys_reader/" to SystemExtensionIds.READER,
         )
     }
 }

@@ -31,7 +31,6 @@ fun GeckoEngineView(
             GeckoView(context).apply {
                 autofillEnabled = true
                 importantForAutofill = importantForAutofillMode
-                session.releaseDisplay()
                 setSession(session.geckoSession)
                 session.attachView(this)
                 boundSession[0] = session
@@ -43,9 +42,11 @@ fun GeckoEngineView(
             }
             if (view.session !== session.geckoSession) {
                 boundSession[0]?.detachView(view)
-                runCatching { view.releaseSession() }
-                session.releaseDisplay()
-                view.setSession(session.geckoSession)
+                // Only setSession() after a successful release. Reflectively stealing the display
+                // leaves the old view with a stale session whose later release throws, and can
+                // trigger "Display already acquired" on the next setSession().
+                val released = runCatching { view.releaseSession() }
+                if (released.isSuccess) view.setSession(session.geckoSession)
             }
             session.attachView(view)
             boundSession[0] = session

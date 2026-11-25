@@ -127,12 +127,12 @@ internal fun ChromeToolbar(
     LaunchedEffect(focusGuard) {
         if (focusGuard) focusManager.clearFocus()
     }
-    LaunchedEffect(focusRequest) {
-        if (focusRequest > 0) {
+    LaunchedEffect(focusRequest, focusGuard) {
+        // Keep the one-shot token until the field can actually take focus; consuming it while the
+        // guard is active silently dropped a tap on the NTP search box.
+        if (focusRequest > 0 && !focusGuard) {
+            omniboxRequester.requestFocus()
             onFocusRequestConsumed()
-            if (!focusGuard) {
-                omniboxRequester.requestFocus()
-            }
         }
     }
     var fieldValue by remember {

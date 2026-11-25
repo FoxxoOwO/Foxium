@@ -1086,7 +1086,9 @@ private fun ChromeBrowserContent(
                         if (pageUrl == null) {
                             emptyList()
                         } else {
-                            allCastMedia.values.flatten().filter { it.pageUrl == pageUrl }
+                            allCastMedia.values.flatten()
+                                .filter { it.pageUrl == pageUrl }
+                                .distinctBy { it.url }
                         }
                     }
                     CastSheet(

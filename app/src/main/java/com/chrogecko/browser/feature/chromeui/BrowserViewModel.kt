@@ -859,7 +859,12 @@ class BrowserViewModel @Inject constructor(
             }
             active = restoredTabs.maxByOrNull { it.first.lastActiveAt }?.second
                 ?: restoredTabs.first().second
-            _tabs.value = restoredTabs.map { it.second }
+            // A tab created by a tap while restore was still running must not be dropped (its
+            // session and observer would leak); keep it alongside the restored tabs.
+            val restoredIds = restoredTabs.mapTo(HashSet()) { it.second.id }
+            val earlyTabs = _tabs.value.filterNot { it.id in restoredIds }
+            val allTabs = restoredTabs.map { it.second } + earlyTabs
+            _tabs.value = allTabs
             restoredTabs.forEach { (entity, tab) ->
                 tab.session.setActive(tab.id == active.id)
                 observeTab(tab)
@@ -870,16 +875,17 @@ class BrowserViewModel @Inject constructor(
                     if (url != null && url != "about:blank") tab.session.load(url)
                 }
             }
-            val replacementEntities = restoredTabs.mapIndexed { index, (entity, tab) ->
+            val replacementEntities = allTabs.filterNot { it.isPrivate }.mapIndexed { index, tab ->
+                val entity = restoredTabs.firstOrNull { it.second.id == tab.id }?.first
                 TabEntity(
                     id = tab.id,
-                    url = tab.state.url.takeIf { it != "about:blank" } ?: entity.url,
-                    title = entity.title,
-                    groupId = entity.groupId,
+                    url = tab.state.url.takeIf { it != "about:blank" } ?: entity?.url,
+                    title = entity?.title ?: tab.state.title,
+                    groupId = tab.groupId,
                     isPrivate = false,
                     sortOrder = index,
-                    lastActiveAt = entity.lastActiveAt,
-                    sessionState = entity.sessionState,
+                    lastActiveAt = entity?.lastActiveAt ?: System.currentTimeMillis(),
+                    sessionState = entity?.sessionState,
                 )
             }
             tabRepository.replaceNormalTabs(replacementEntities)
@@ -926,6 +932,20 @@ class BrowserViewModel @Inject constructor(
             _tabs.value.mapTo(HashSet()) { it.id },
         )
         TabOpenerPolicy.prune(openerTabIds, id)
+        // A closing tab's observer is cancelled before it can see the session's final null
+        // prompt/permission emissions; clear their UI state here or dialogs stay stuck on screen.
+        if (promptSession === tab.session) {
+            promptSession = null
+            _prompt.value = null
+        }
+        if (permissionSession === tab.session) {
+            permissionSession = null
+            _permission.value = null
+        }
+        if (androidPermissionSession === tab.session) {
+            androidPermissionSession = null
+            _androidPermissions.value = null
+        }
         _tabs.update { list -> list.filterNot { it.id == id } }
         observers.remove(id)?.cancel()
         iconQueriedUrls.remove(id)
@@ -1235,7 +1255,7 @@ class BrowserViewModel @Inject constructor(
         val tab = activeTab.value ?: return
         clearSuggestions()
         _omniboxFocused.value = false
-        if (target.substringBefore('?').endsWith(".user.js", ignoreCase = true)) {
+        if (responseIsUserscript(target)) {
             installUserscript(target)
             return
         }
@@ -1278,7 +1298,10 @@ class BrowserViewModel @Inject constructor(
     /** Chrome's "Clear browsing data": the page data lives in Gecko, the rest in Room. */
     fun clearBrowsingData(history: Boolean, cookies: Boolean, cache: Boolean, downloads: Boolean) {
         viewModelScope.launch {
-            if (history) this@BrowserViewModel.history.clear()
+            if (history) {
+                this@BrowserViewModel.history.clear()
+                lastRecordedUrls.clear()
+            }
             if (downloads) downloadManager.clear()
             var flags = 0L
             if (cookies) {
@@ -1361,8 +1384,12 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
-    fun openUrlInNewTab(url: String, parentTabId: String? = activeTab.value?.id) {
-        val id = createTab(isPrivate = activeTab.value?.isPrivate ?: false, url = url)
+    fun openUrlInNewTab(
+        url: String,
+        parentTabId: String? = activeTab.value?.id,
+        isPrivate: Boolean = activeTab.value?.isPrivate ?: false,
+    ) {
+        val id = createTab(isPrivate = isPrivate, url = url)
         if (parentTabId != null && parentTabId != id) openerTabIds[id] = parentTabId
         _gridOpen.value = false
     }
@@ -1416,7 +1443,15 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun removeBookmark(id: Long) {
-        viewModelScope.launch { bookmarks.removeById(id) }
+        viewModelScope.launch {
+            bookmarks.removeById(id)
+            refreshBookmarked()
+        }
+    }
+
+    private suspend fun refreshBookmarked() {
+        val url = activeTab.value?.state?.url
+        _bookmarked.value = url != null && url != "about:blank" && bookmarks.isBookmarked(url)
     }
 
     fun toggleSiteDarkMode() {
@@ -1541,6 +1576,7 @@ class BrowserViewModel @Inject constructor(
                     localizedString(R.string.msg_bookmarks_import_empty)
                 }
                 _messages.tryEmit(message)
+                refreshBookmarked()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -1853,7 +1889,10 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun clearHistory() {
-        viewModelScope.launch { history.clear() }
+        viewModelScope.launch {
+            history.clear()
+            lastRecordedUrls.clear()
+        }
     }
 
     fun deleteUserscript(id: String) {
@@ -1879,8 +1918,13 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
+    /** Invalidates an in-flight publish when mirroring is stopped mid-handshake. */
+    @Volatile
+    private var mirrorGeneration = 0
+
     fun publishMirror() {
         viewModelScope.launch {
+            val generation = ++mirrorGeneration
             // The consent result only authorizes a projection; the service can still fail to
             // start, acquire MediaProjection or create the virtual display. Publishing early
             // would leave a dead LAN URL in the UI.
@@ -1892,8 +1936,14 @@ class BrowserViewModel @Inject constructor(
                 _messages.tryEmit(localizedString(R.string.msg_cast_failed))
                 return@launch
             }
-            runCatching { _mirrorUrl.value = cast.publishMirror() }
-                .onFailure { _messages.tryEmit(localizedString(R.string.msg_cast_failed)) }
+            runCatching {
+                val url = cast.publishMirror()
+                if (mirrorGeneration == generation &&
+                    com.chrogecko.browser.feature.cast.MirrorFrames.running.value
+                ) {
+                    _mirrorUrl.value = url
+                }
+            }.onFailure { _messages.tryEmit(localizedString(R.string.msg_cast_failed)) }
         }
     }
 
@@ -2037,6 +2087,7 @@ class BrowserViewModel @Inject constructor(
                     started = true
                 } else if (started) {
                     started = false
+                    mirrorGeneration++
                     _mirrorUrl.value = null
                     cast.stopMirror()
                 }
@@ -2123,6 +2174,7 @@ class BrowserViewModel @Inject constructor(
     }
 
     fun stopMirror() {
+        mirrorGeneration++
         _mirrorUrl.value = null
         cast.stopMirror()
     }
@@ -2152,9 +2204,14 @@ class BrowserViewModel @Inject constructor(
     private fun observeTab(tab: BrowserTab) {
         tab.session.externalResponseHandler = ::handleExternalResponse
         // window.open / target="_blank" becomes a new tab, using an unopened child session.
-        tab.session.popupHandler = { url -> openUrlInNewTab(url, parentTabId = tab.id) }
+        tab.session.popupHandler = { url ->
+            openUrlInNewTab(url, parentTabId = tab.id, isPrivate = tab.isPrivate)
+        }
         tab.session.newSessionHandler = { uri ->
-            createChildSession(tab.isPrivate, tab.groupId, uri, parentTabId = tab.id)
+            // Group mutations replace the BrowserTab instance; read the live one so a child
+            // opened later inherits the current group instead of the original snapshot.
+            val current = _tabs.value.firstOrNull { it.id == tab.id } ?: tab
+            createChildSession(current.isPrivate, current.groupId, uri, parentTabId = tab.id)
         }
         tab.session.closeRequestHandler = { closeTab(tab.id, recordUndo = false) }
         tab.session.printHandler = { file -> _printFile.value = file }

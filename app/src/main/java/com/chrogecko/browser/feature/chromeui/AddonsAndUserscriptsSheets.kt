@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -200,6 +201,9 @@ fun UserscriptEditorDialog(
     onDismiss: () -> Unit,
 ) {
     var source by remember(script.id) { mutableStateOf(script.source) }
+    // The script can be replaced with the same id (e.g. after an update check); do not save stale
+    // text over the newer source.
+    LaunchedEffect(script.source) { source = script.source }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),

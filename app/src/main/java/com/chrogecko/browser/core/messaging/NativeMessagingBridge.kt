@@ -35,8 +35,13 @@ class NativeMessagingBridge @Inject constructor() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ports = ConcurrentHashMap<String, WebExtension.Port>()
-    /** One delegate per extension: re-registering must replace, never stack, port listeners. */
-    private val delegates = ConcurrentHashMap<String, WebExtension.MessageDelegate>()
+    /** One delegate per extension *instance*: GeckoView can return a new object for the same id. */
+    private val registrations = ConcurrentHashMap<String, Registration>()
+
+    private class Registration(
+        val extension: WebExtension,
+        val delegate: WebExtension.MessageDelegate,
+    )
 
     private val _events = MutableSharedFlow<NativeEvent>(
         extraBufferCapacity = 64,
@@ -50,21 +55,20 @@ class NativeMessagingBridge @Inject constructor() {
     fun register(extension: WebExtension, force: Boolean = false) {
         // setMessageDelegate is @UiThread but GeckoResult callbacks land elsewhere.
         mainHandler.post {
-            val previousDelegate = delegates[extension.id]
-            if (!force && previousDelegate != null) return@post
-            if (force) {
-                // Replacing a delegate does not disconnect ports created by the old one.
+            val previous = registrations[extension.id]
+            if (!force && previous?.extension === extension) return@post
+            if (previous != null) {
+                // Replacing a delegate does not disconnect ports created by the old one. Always
+                // clear the delegate on the *old instance*, not on the new one.
                 ports.remove(extension.id)?.let { old ->
                     runCatching { old.setDelegate(null) }
                     runCatching { old.disconnect() }
                 }
-                if (previousDelegate != null) {
-                    runCatching { extension.setMessageDelegate(null, APPLICATION_NAME) }
-                }
+                runCatching { previous.extension.setMessageDelegate(null, APPLICATION_NAME) }
                 _connectedExtensions.update { it - extension.id }
             }
             val delegate = PortMessageDelegate(extension.id)
-            delegates[extension.id] = delegate
+            registrations[extension.id] = Registration(extension, delegate)
             extension.setMessageDelegate(delegate, APPLICATION_NAME)
         }
     }

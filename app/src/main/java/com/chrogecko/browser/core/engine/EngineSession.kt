@@ -941,6 +941,9 @@ class EngineSession(
             printFiles.clear()
         }
         ioScope.cancel()
+        // GeckoView only flushes session state on deactivation; without this a closed tab loses
+        // its newest history/scroll position and restores an older page on next launch.
+        runCatching { geckoSession.setActive(false) }
         geckoSession.close()
     }
 

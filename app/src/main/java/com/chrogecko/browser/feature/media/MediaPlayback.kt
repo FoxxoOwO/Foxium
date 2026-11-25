@@ -40,6 +40,7 @@ object MediaPlayback {
     val state: StateFlow<NowPlaying?> = _state.asStateFlow()
 
     private val callbacksByOwner = ConcurrentHashMap<String, Callbacks>()
+    private val statesByOwner = ConcurrentHashMap<String, NowPlaying>()
 
     @Volatile
     private var activeOwnerId: String? = null
@@ -70,36 +71,55 @@ object MediaPlayback {
         seekTo: (Long) -> Unit,
     ) {
         callbacksByOwner[ownerId] = Callbacks(play, pause, stop, next, previous, seekTo)
-        if (activeOwnerId == null || _state.value?.playing != true) {
-            activeOwnerId = ownerId
-        }
+        // Binding a new session must never steal ownership from one that is genuinely playing.
+        if (activeOwnerId == null) activeOwnerId = ownerId
     }
 
-    /** Called on every Gecko callback so the notification follows playback. */
+    /** Called on every Gecko callback so the notification follows the owner that started playing. */
     fun update(ownerId: String, item: NowPlaying) {
-        if (activeOwnerId != null && activeOwnerId != ownerId && _state.value?.playing == true && !item.playing) {
-            return
+        val previous = statesByOwner[ownerId]
+        statesByOwner[ownerId] = item
+        val active = activeOwnerId
+        when {
+            item.playing && previous?.playing != true && active != ownerId -> {
+                // Only a false→true transition may take over the notification.
+                activeOwnerId = ownerId
+                _state.value = item
+            }
+            active == ownerId -> {
+                _state.value = item
+                if (!item.playing) electNextPlayingOwner(ownerId)
+            }
+            else -> return // a background tab's state must not replace the active one
         }
-        if (item.playing || activeOwnerId == null) {
-            activeOwnerId = ownerId
-        }
-        if (activeOwnerId != ownerId) return
-        _state.value = item
-        if (!serviceRunning && item.playing) {
-            startService()
-        }
+        if (!serviceRunning && _state.value?.playing == true) startService()
+    }
+
+    private fun electNextPlayingOwner(excluding: String) {
+        val replacement = statesByOwner.entries.firstOrNull {
+            it.key != excluding && it.value.playing
+        } ?: return
+        activeOwnerId = replacement.key
+        _state.value = replacement.value
     }
 
     /** The page stopped having a media session at all; tear the notification down. */
     fun release(ownerId: String? = null) {
         if (ownerId != null) {
             callbacksByOwner.remove(ownerId)
+            statesByOwner.remove(ownerId)
             if (activeOwnerId != null && activeOwnerId != ownerId) return
+            electNextPlayingOwner(ownerId)
+            if (activeOwnerId != null) return
         } else {
             callbacksByOwner.clear()
+            statesByOwner.clear()
         }
         activeOwnerId = null
         _state.value = null
+        // Mark stopped before requesting the stop: otherwise a playing update in the gap sees
+        // serviceRunning == true, skips startForegroundService, and loses its notification.
+        serviceRunning = false
         val ctx = context ?: return
         runCatching { ctx.stopService(Intent(ctx, MediaPlaybackService::class.java)) }
     }
