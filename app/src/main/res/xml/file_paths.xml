@@ -4,5 +4,7 @@
     <!-- Public Downloads on API 26-28, where MediaStore is not used yet. -->
     <external-path name="public_downloads" path="Download/" />
     <files-path name="internal_downloads" path="downloads/" />
+    <!-- Finalized update APKs live in filesDir/updates so cache trimming cannot delete them. -->
+    <files-path name="update_apks" path="updates/" />
     <cache-path name="updates" path="updates/" />
 </paths>

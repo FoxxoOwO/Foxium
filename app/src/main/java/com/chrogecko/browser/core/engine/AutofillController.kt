@@ -59,6 +59,9 @@ class AutofillController @Inject constructor(
     @Volatile
     private var builtInPasswordSaveEnabled = true
 
+    @Volatile
+    private var neverSaveHosts: Set<String> = emptySet()
+
     // Autofill focus is inherently per-tab. A singleton's single job/session pair lets a focus
     // event in tab B steal tab A's in-flight lookup and even fill tab B's node ids into tab A.
     private val focusJobs = ConcurrentHashMap<String, Job>()
@@ -73,6 +76,9 @@ class AutofillController @Inject constructor(
         }
         scope.launch {
             preferences.builtInPasswordSaveEnabled.collectLatest { builtInPasswordSaveEnabled = it }
+        }
+        scope.launch {
+            preferences.neverSaveHosts.collectLatest { neverSaveHosts = it }
         }
     }
 
@@ -125,20 +131,18 @@ class AutofillController @Inject constructor(
         val geckoSession = sessions[sessionId]?.get() ?: return
         val fields = suggestionsBySession[sessionId] ?: return
         if (fields.usernameId == null && fields.passwordId == null) return
+        val capturedJob = focusJobs[sessionId]
         scope.launch {
-            try {
-                val password = logins.password(entry.id) ?: return@launch
-                // Re-check under the single-threaded scope: another tab may have taken focus
-                // between the tap and the database read.
-                val current = suggestionsBySession[sessionId] ?: return@launch
-                if (latestSessionId != sessionId) return@launch
-                val values = SparseArray<CharSequence>()
-                current.usernameId?.let { values.put(it, entry.username) }
-                current.passwordId?.let { values.put(it, password) }
-                runCatching { geckoSession.autofillSession.autofill(values) }
-            } finally {
-                clearSuggestion(sessionId)
-            }
+            val password = logins.password(entry.id) ?: return@launch
+            // Re-check under the single-threaded scope: another tab may have taken focus
+            // between the tap and the database read. Keep the suggestion bar if we bail out.
+            val current = suggestionsBySession[sessionId] ?: return@launch
+            if (latestSessionId != sessionId) return@launch
+            val values = SparseArray<CharSequence>()
+            current.usernameId?.let { values.put(it, entry.username) }
+            current.passwordId?.let { values.put(it, password) }
+            val filled = runCatching { geckoSession.autofillSession.autofill(values) }.isSuccess
+            if (filled) clearSuggestion(sessionId, capturedJob)
         }
     }
 
@@ -152,8 +156,13 @@ class AutofillController @Inject constructor(
         if (!sessionId.isNullOrBlank()) clearSuggestion(sessionId)
     }
 
-    private fun clearSuggestion(sessionId: String) {
-        focusJobs.remove(sessionId)?.cancel()
+    private fun clearSuggestion(sessionId: String, onlyJob: Job? = null) {
+        if (onlyJob != null) {
+            focusJobs.remove(sessionId, onlyJob)
+            onlyJob.cancel()
+        } else {
+            focusJobs.remove(sessionId)?.cancel()
+        }
         suggestionsBySession.remove(sessionId)
         if (latestSessionId == sessionId) {
             latestSessionId = null
@@ -335,6 +344,7 @@ class AutofillController @Inject constructor(
                 }.orEmpty()
             }
             val host = hostOf(passwordNode?.domain ?: node.domain) ?: return
+            if (host in neverSaveHosts) return
             if (password.isEmpty() || username.isBlank()) return
             scope.launch {
                 if (logins.password(host, username) == password) return@launch

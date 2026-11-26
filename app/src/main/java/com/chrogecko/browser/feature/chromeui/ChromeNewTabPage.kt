@@ -685,35 +685,37 @@ private fun ShortcutTiles(
                 Text(if (editing) stringResource(R.string.done) else stringResource(R.string.edit), style = MaterialTheme.typography.labelMedium)
             }
         }
-        val rows = if (shortcuts.isEmpty()) listOf(emptyList<NewTabShortcut>()) else shortcuts.chunked(4)
-        rows.forEachIndexed { rowIndex, row ->
+        // Include the add tile in the chunking so a full 4- or 8-shortcut grid cannot put five
+        // weighted children into one row and shrink every tile.
+        val tiles: List<NewTabShortcut?> = if (editing) shortcuts + null else shortcuts
+        val rows = if (tiles.isEmpty()) listOf(listOf<NewTabShortcut?>(null)) else tiles.chunked(4)
+        rows.forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 row.forEach { shortcut ->
-                    ShortcutTile(
-                        shortcut = shortcut,
-                        icon = icons[shortcut.host],
-                        color = TILE_COLORS[shortcut.label.hashCode().mod(TILE_COLORS.size)],
-                        editing = editing,
-                        onClick = {
-                            when {
-                                !editing -> onOpen(shortcut.url)
-                                shortcut.url in pinnedUrls -> onRename(shortcut)
-                            }
-                        },
-                        onRemove = { onRemove(shortcut.host) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                var filler = 4 - row.size
-                if (editing && rowIndex == rows.lastIndex) {
-                    AddShortcutTile(onClick = onAdd, modifier = Modifier.weight(1f))
-                    filler -= 1
+                    if (shortcut == null) {
+                        AddShortcutTile(onClick = onAdd, modifier = Modifier.weight(1f))
+                    } else {
+                        ShortcutTile(
+                            shortcut = shortcut,
+                            icon = icons[shortcut.host],
+                            color = TILE_COLORS[shortcut.label.hashCode().mod(TILE_COLORS.size)],
+                            editing = editing,
+                            onClick = {
+                                when {
+                                    !editing -> onOpen(shortcut.url)
+                                    shortcut.url in pinnedUrls -> onRename(shortcut)
+                                }
+                            },
+                            onRemove = { onRemove(shortcut.host) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
                 // Keep a full row of four so tiles never stretch to the edges.
-                repeat(filler.coerceAtLeast(0)) { Box(Modifier.weight(1f)) }
+                repeat(4 - row.size) { Box(Modifier.weight(1f)) }
             }
         }
     }

@@ -34,6 +34,15 @@ class IconHrefsTest {
     }
 
     @Test
+    fun acceptsUppercaseSchemeInAbsoluteIcons() {
+        val html = "<link rel='icon' href='HTTPS://cdn.example.com/icon.png'>"
+        assertEquals(
+            listOf("HTTPS://cdn.example.com/icon.png"),
+            iconHrefs(html, "https://example.com/"),
+        )
+    }
+
+    @Test
     fun ignoresPagesWithoutIconsAndBadBases() {
         assertTrue(iconHrefs("<html><body>hi</body></html>", "https://example.com/").isEmpty())
         assertTrue(iconHrefs("<link rel='icon' href='/a.png'>", "not a url").isEmpty())

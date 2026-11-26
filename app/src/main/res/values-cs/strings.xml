@@ -404,6 +404,7 @@
         <item quantity="other">Zavřeno %1$d karet</item>
     </plurals>
     <string name="msg_trigger_one_word">Zkratka musí být jedno slovo bez mezer</string>
+    <string name="msg_trigger_exists">Jiná zkratka už tento spouštěč používá</string>
     <string name="msg_browsing_data_cleared">Údaje o prohlížení vymazány</string>
     <string name="msg_clear_data_failed">Data webů se nepodařilo vymazat</string>
     <string name="msg_folder_name_empty">Název složky nesmí být prázdný</string>

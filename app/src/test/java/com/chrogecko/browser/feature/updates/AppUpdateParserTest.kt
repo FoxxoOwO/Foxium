@@ -23,6 +23,13 @@ class AppUpdateParserTest {
     }
 
     @Test
+    fun `final release is newer than its prerelease`() {
+        assertTrue(AppUpdateParser.isNewerVersion("1.0.0", "1.0.0-rc1"))
+        assertTrue(AppUpdateParser.isNewerVersion("1.0.0-rc2", "1.0.0-rc1"))
+        assertFalse(AppUpdateParser.isNewerVersion("1.0.0-rc1", "1.0.0"))
+    }
+
+    @Test
     fun `parseLatestUpdate skips drafts and respects prerelease filter`() {
         val json = """
             [

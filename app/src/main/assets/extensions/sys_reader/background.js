@@ -87,6 +87,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
       host: message.host || "",
       available: message.available === true,
       active: message.active === true,
+      // Must be relayed: Kotlin uses it to avoid re-enabling reader after a manual "off".
+      userInitiated: message.userInitiated === true,
     });
   }
 });

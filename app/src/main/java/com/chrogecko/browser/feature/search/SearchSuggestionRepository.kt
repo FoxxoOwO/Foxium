@@ -61,12 +61,14 @@ class SearchSuggestionRepository @Inject constructor(client: OkHttpClient) {
                 }
 
                 override fun onResponse(call: Call, response: Response) {
-                    val body = response.use { res ->
-                        if (res.isSuccessful) res.body?.string().orEmpty() else ""
+                    // body.string() can throw on a dropped connection; resuming only on success
+                    // left the coroutine suspended forever and the suggestion bar stuck.
+                    val result = runCatching {
+                        response.use { res ->
+                            if (res.isSuccessful) res.body?.string().orEmpty() else ""
+                        }
                     }
-                    if (continuation.isActive) {
-                        continuation.resume(body)
-                    }
+                    if (continuation.isActive) continuation.resumeWith(result)
                 }
             },
         )

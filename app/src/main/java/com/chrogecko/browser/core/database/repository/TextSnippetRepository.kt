@@ -23,8 +23,8 @@ class TextSnippetRepository @Inject constructor(private val dao: TextSnippetDao)
         val conflict = dao.findByTrigger(clean)
         if (conflict != null && conflict.id != id) {
             // Reject the edit: overwriting the *other* row's expansion made the user's change
-            // vanish while corrupting an unrelated snippet.
-            return 0
+            // vanish while corrupting an unrelated snippet. -1 distinguishes this from validation.
+            return -1
         }
         val existingEnabled = if (id != 0L) dao.findById(id)?.enabled ?: true else true
         return dao.upsert(

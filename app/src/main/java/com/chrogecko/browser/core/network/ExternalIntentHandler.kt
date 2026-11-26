@@ -50,7 +50,11 @@ object ExternalIntentHandler {
         intent.component = null
         intent.selector = null
         val dataScheme = intent.data?.scheme?.lowercase()
-        if (dataScheme == "file" || dataScheme == "content") return true
+        if (dataScheme == "file" || dataScheme == "content") {
+            // Consume the navigation but still honour the intent's browser fallback URL.
+            extractSafeFallbackUrl(intent)?.let(onFallbackUrl)
+            return true
+        }
         intent.removeFlags(
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
         )

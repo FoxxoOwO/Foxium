@@ -155,10 +155,12 @@ function onKeyDown(event) {
   const snippet = byTrigger.get(token);
   if (!snippet) return;
 
-  if (!applyExpansion(element, before, token, expandPlaceholders(snippet))) return;
+  // The typed space is consumed below, so carry the separator in the replacement itself;
+  // otherwise "sig<Space>Smith" becomes "John DoeSmith" with a hardware keyboard.
+  const replacement = expandPlaceholders(snippet) + (event.key === " " ? " " : "");
+  if (!applyExpansion(element, before, token, replacement)) return;
 
-  // The terminator follows the expansion: a typed space is consumed, Enter/Tab still reach the page
-  // so chat boxes and forms behave as before.
+  // Enter/Tab still reach the page so chat boxes and forms behave as before.
   if (event.key === " ") event.preventDefault();
 }
 
@@ -168,7 +170,9 @@ function onKeyDown(event) {
  * covers both paths; synthetic events are ignored so the replacement cannot re-enter.
  */
 function onInput(event) {
-  if (!event.isTrusted || !config.enabled || byTrigger.size === 0) return;
+  // IMEs emit trusted input events while composing; replacing text mid-composition corrupts
+  // the candidate and breaks pinyin/kana input. The keydown handler has the same guard.
+  if (event.isComposing || !event.isTrusted || !config.enabled || byTrigger.size === 0) return;
 
   const element = editableFor(event);
   if (!element) return;

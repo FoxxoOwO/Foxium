@@ -805,6 +805,7 @@ private fun ChromeBrowserContent(
             request = saveRequest,
             onSave = viewModel::saveLogin,
             onDismiss = viewModel::dismissSaveLogin,
+            onNever = viewModel::neverSaveLogin,
         )
     }
     EnginePromptHost(
@@ -930,7 +931,10 @@ private fun ChromeBrowserContent(
                     val installedAddons by viewModel.installedAddons.collectAsStateWithLifecycle()
                     val userAddons = remember(installedAddons) { installedAddons.filterNot { it.builtIn } }
                     val scriptCommands by viewModel.userscriptMenuCommands.collectAsStateWithLifecycle()
-                    val language = remember(appLanguage) { AppLocaleManager.resolveLocale(appLanguage).language }
+                    val systemLocales = LocalConfiguration.current.locales
+                    val language = remember(appLanguage, systemLocales) {
+                        AppLocaleManager.resolveLocale(appLanguage).language
+                    }
                     ChromeThreeDotMenu(
                         activeTab = activeTab,
                         bookmarked = bookmarked,

@@ -35,6 +35,15 @@ class UrlDomainPolicyTest {
     }
 
     @Test
+    fun `shared hosting suffixes keep tenant separation`() {
+        assertEquals("alice.github.io", UrlDomainPolicy.registrableDomain("alice.github.io"))
+        assertEquals("bob.github.io", UrlDomainPolicy.registrableDomain("bob.github.io"))
+        assertEquals("site.blogspot.com", UrlDomainPolicy.registrableDomain("site.blogspot.com"))
+        assertEquals("bucket.s3.amazonaws.com", UrlDomainPolicy.registrableDomain("bucket.s3.amazonaws.com"))
+        assertEquals("bank.co.kr", UrlDomainPolicy.registrableDomain("bank.co.kr"))
+    }
+
+    @Test
     fun `empty labels are ignored`() {
         assertEquals("example.com", UrlDomainPolicy.registrableDomain("cdn..example.com"))
     }

@@ -83,7 +83,22 @@ object AppUpdateParser {
             val valB = partsB.getOrElse(i) { 0 }
             if (valA != valB) return valA.compareTo(valB)
         }
-        return 0
+        // Same numeric core: a final release is newer than its RC/beta, and a running RC must be
+        // able to see the final release as an update.
+        val preA = prereleaseOf(a)
+        val preB = prereleaseOf(b)
+        return when {
+            preA == preB -> 0
+            preA == null -> 1
+            preB == null -> -1
+            else -> preA.compareTo(preB)
+        }
+    }
+
+    private fun prereleaseOf(raw: String): String? {
+        val trimmed = raw.trim().removePrefix("v").removePrefix("V")
+        val suffix = trimmed.substringAfter('-', "").substringBefore('+').trim()
+        return suffix.ifEmpty { null }
     }
 
     fun isTrustedHttpsUrl(url: String): Boolean {

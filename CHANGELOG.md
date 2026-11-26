@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Update installation:** the finalized APK lives in `filesDir/updates`, but the FileProvider had no root for it – installing from the dialog or notification crashed. Added the missing root and turned URI creation failures into a visible error instead of an exception. Cancelling a download before its coroutine starts no longer wedges all future downloads. The final release is now correctly seen as newer than its RC/beta.
+- **Suggestions:** a dropped connection while reading the response body left the suggestion coroutine suspended forever; failures are now propagated to the caller.
+- **Passwords:** the "Never" button in the save prompt now persists a per-host rule instead of just hiding the dialog; a rejected autofill no longer discards the credential bar; duplicate snippet triggers get a correct error message.
+- **Reader/expander:** a manual reader-off is no longer immediately re-enabled on auto-reader sites (the flag now survives the native relay); the expander keeps the word separator with hardware keyboards and ignores IME composition events.
+- **Intent/favicons:** `intent://` links with `file:`/`content:` data now honour their browser fallback URL; uppercase-scheme icon URLs are no longer discarded.
+- **UI:** the find-in-page field receives focus when opened; the add-shortcut tile no longer squeezes a full 4-tile row; the translate target follows system locale changes.
+- **Security:** the registrable-domain helper now understands shared-hosting suffixes (`github.io`, `s3.amazonaws.com`, `co.kr`, …) so tenants cannot be treated as the same site.
+
 ## [0.79.1] - 2026-11-25
 
 ### WebAuthn / passkeys

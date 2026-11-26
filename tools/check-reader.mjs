@@ -212,6 +212,14 @@ assert.equal(images[0].hasAttribute("onload"), false);
 assert.equal(images[1].getAttribute("src"), "https://example.com/photo.png");
 
 assert.equal(sentMessages.length, 1);
+
+// A manual reader-off report must keep its userInitiated flag through the background relay,
+// otherwise Kotlin re-activates reader mode on auto-reader sites.
+const backgroundSource = readFileSync(
+  new URL("../app/src/main/assets/extensions/sys_reader/background.js", import.meta.url),
+  "utf8",
+);
+assert.match(backgroundSource, /userInitiated:\s*message\.userInitiated\s*===\s*true/);
 assert.equal(sentMessages[0].type, "reader/ready");
 
 console.log("reader checks passed");

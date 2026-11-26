@@ -390,6 +390,7 @@
         <item quantity="other">%1$d tabs closed</item>
     </plurals>
     <string name="msg_trigger_one_word">Trigger must be one word without spaces</string>
+    <string name="msg_trigger_exists">Another snippet already uses this trigger</string>
     <string name="msg_browsing_data_cleared">Browsing data cleared</string>
     <string name="msg_clear_data_failed">Could not clear site data</string>
     <string name="msg_folder_name_empty">Folder name cannot be empty</string>

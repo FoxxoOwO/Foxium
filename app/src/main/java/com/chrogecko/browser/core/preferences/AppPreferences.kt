@@ -71,6 +71,19 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
         .map { HttpsOnlyMode.fromId(it[HTTPS_ONLY_MODE]) }
         .distinctUntilChanged()
 
+    /** Hosts for which the user chose "Never" in the save-password prompt. */
+    val neverSaveHosts: Flow<Set<String>> = data
+        .map { it[NEVER_SAVE_HOSTS].orEmpty() }
+        .distinctUntilChanged()
+
+    suspend fun addNeverSaveHost(host: String) {
+        val normalized = host.trim().lowercase()
+        if (normalized.isEmpty()) return
+        context.preferences.edit { prefs ->
+            prefs[NEVER_SAVE_HOSTS] = prefs[NEVER_SAVE_HOSTS].orEmpty() + normalized
+        }
+    }
+
     /** Third-party and cross-site cookie policy. */
     val cookiePolicy: Flow<CookiePolicy> = data
         .map { CookiePolicy.fromId(it[COOKIE_POLICY]) }
@@ -565,6 +578,7 @@ class AppPreferences @Inject constructor(@param:ApplicationContext private val c
         val HIDDEN_DISCOVER = stringSetPreferencesKey("hidden_discover")
         val ANDROID_AUTOFILL = booleanPreferencesKey("android_autofill_enabled")
         val BUILTIN_PASSWORD_SAVE = booleanPreferencesKey("builtin_password_save_enabled")
+        val NEVER_SAVE_HOSTS = stringSetPreferencesKey("never_save_hosts")
         val AUTO_UPDATE_ENABLED = booleanPreferencesKey("auto_update_enabled")
         val AUTO_UPDATE_PRERELEASES = booleanPreferencesKey("auto_update_prereleases")
         val LAST_UPDATE_CHECK_MS = longPreferencesKey("last_update_check_ms")

@@ -123,8 +123,13 @@ keydown({
     prevented = true;
   },
 });
-check("keydown expansion", area.value, "ChroGecko support");
+check("keydown expansion keeps separator", area.value, "ChroGecko support ");
 check("keydown consumed space", prevented, true);
+
+// 2b. A composing (IME) input event must not replace text mid-composition.
+area = field(";sig ");
+input({ isTrusted: true, isComposing: true, target: area, composedPath: () => [area] });
+check("composition ignored", area.value, ";sig ");
 
 // 3. Enter after a trigger expands and is left to the page.
 area = field(";sig");

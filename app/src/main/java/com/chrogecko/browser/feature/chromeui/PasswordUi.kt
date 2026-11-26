@@ -104,6 +104,7 @@ fun SaveLoginDialog(
     request: AutofillController.SaveRequest,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
+    onNever: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -112,6 +113,6 @@ fun SaveLoginDialog(
             Text(stringResource(R.string.save_password_message, request.username, request.host))
         },
         confirmButton = { TextButton(onClick = onSave) { Text(stringResource(R.string.save)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.never)) } },
+        dismissButton = { TextButton(onClick = onNever) { Text(stringResource(R.string.never)) } },
     )
 }

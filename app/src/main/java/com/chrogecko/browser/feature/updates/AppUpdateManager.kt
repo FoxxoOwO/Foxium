@@ -195,6 +195,10 @@ class AppUpdateManager @Inject constructor(
         ensureNotificationPermission()
         downloadJob = scope.launch {
             runDownload(update)
+        }.also { job ->
+            // A cancel arriving before the coroutine starts prevents runDownload's finally from
+            // ever running; reset the guard here so later downloads are not blocked forever.
+            job.invokeOnCompletion { downloading.set(false) }
         }
     }
 
@@ -207,6 +211,10 @@ class AppUpdateManager @Inject constructor(
 
     fun cancelDownload() {
         cancelRequested = true
+        val current = _state.value
+        if (current is UpdateState.Downloading) {
+            _state.value = UpdateState.Available(current.update, bannerDismissed = false)
+        }
         downloadJob?.cancel()
         activeCall?.cancel()
     }
@@ -367,11 +375,16 @@ class AppUpdateManager @Inject constructor(
         if (current is UpdateState.ReadyToInstall && current.needsInstallPermission) {
             _state.value = current.copy(needsInstallPermission = false)
         }
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file,
-        )
+        val uri = runCatching {
+            FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file,
+            )
+        }.getOrElse { error ->
+            _state.value = UpdateState.Error(error.message ?: "Cannot share update file")
+            return false
+        }
         val installIntent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)

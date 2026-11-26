@@ -1173,8 +1173,10 @@ class BrowserViewModel @Inject constructor(
 
     fun saveTextSnippet(id: Long, trigger: String, expansion: String) {
         viewModelScope.launch {
-            if (textExpander.save(id, trigger, expansion) == 0L) {
-                _messages.tryEmit(localizedString(R.string.msg_trigger_one_word))
+            when (textExpander.save(id, trigger, expansion)) {
+                -1L -> _messages.tryEmit(localizedString(R.string.msg_trigger_exists))
+                0L -> _messages.tryEmit(localizedString(R.string.msg_trigger_one_word))
+                else -> Unit
             }
         }
     }
@@ -2109,6 +2111,12 @@ class BrowserViewModel @Inject constructor(
     fun dismissLoginSuggestion() = autofill.dismissSuggestion(activeTab.value?.session?.id)
 
     fun dismissSaveLogin() = autofill.dismissSave()
+
+    fun neverSaveLogin() {
+        val host = saveLoginRequest.value?.host ?: return
+        viewModelScope.launch { preferences.addNeverSaveHost(host) }
+        dismissSaveLogin()
+    }
 
     fun deleteLogin(id: Long) {
         viewModelScope.launch { loginRepository.delete(id) }

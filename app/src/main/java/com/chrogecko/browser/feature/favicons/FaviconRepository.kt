@@ -40,7 +40,7 @@ internal fun iconHrefs(html: String, base: String): List<String> {
             }
         }
         .mapNotNull { href -> runCatching { root.resolve(href.trim()).toString() }.getOrNull() }
-        .filter { it.startsWith("http") }
+        .filter { it.startsWith("http", ignoreCase = true) }
         .distinct()
         .take(4)
         .toList()
