@@ -24,6 +24,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,14 +49,21 @@ fun EnginePromptHost(
     onText: (String) -> Unit,
     onChoice: (Int) -> Unit,
     onAuth: (String, String) -> Unit,
-    onFiles: (List<Uri>) -> Unit,
+    onFiles: (Long, List<Uri>) -> Unit,
 ) {
+    // SAF returns asynchronously; remember which prompt launched the picker so a newer prompt
+    // cannot be answered with the older picker's result.
+    val filePromptId = remember { mutableLongStateOf(-1L) }
     val singlePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
-    ) { uri -> onFiles(listOfNotNull(uri)) }
+    ) { uri ->
+        if (filePromptId.longValue >= 0) onFiles(filePromptId.longValue, listOfNotNull(uri))
+    }
     val multiPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
-    ) { uris -> onFiles(uris) }
+    ) { uris ->
+        if (filePromptId.longValue >= 0) onFiles(filePromptId.longValue, uris)
+    }
 
     if (prompt == null) return
 
@@ -104,10 +112,11 @@ fun EnginePromptHost(
             // Gecko blocks the picker request until an answer arrives, so open SAF immediately.
             LaunchedEffect(prompt.id) {
                 val mime = normalizeMimeTypes(prompt.mimeTypes)
+                filePromptId.longValue = prompt.id
                 runCatching {
                     if (prompt.multiple) multiPicker.launch(mime) else singlePicker.launch(mime)
                 }.onFailure {
-                    onFiles(emptyList())
+                    onFiles(prompt.id, emptyList())
                 }
             }
         }

@@ -246,6 +246,10 @@ class EngineSession(
                     attachPrintDelegate()
                 }
                 _contextMenu.value = null
+                // Selection belongs to the old document; leaving it published keeps a stale
+                // floating toolbar anchored on the new page.
+                selectionCache = null
+                _selection.value = null
                 _scrollY.value = 0
                 _state.update { it.copy(isLoading = true, progress = 0, url = url) }
             }
@@ -329,6 +333,9 @@ class EngineSession(
         geckoSession.printDelegate = object : GeckoSession.PrintDelegate {
             // printPageContent() only signals the app; the PDF arrives via didPrintPageContent().
             override fun onPrint(session: GeckoSession) {
+                // Content-triggered window.print() in a background tab must not hijack the
+                // foreground print UI and must not start a job nobody will consume.
+                if (printHandler == null) return
                 session.didPrintPageContent()
             }
 
@@ -457,7 +464,9 @@ class EngineSession(
 
             override fun onStop(session: GeckoSession, mediaSession: MediaSession) {
                 playing = false
-                MediaPlayback.release(id)
+                // Keep the transport callbacks: the same MediaSession can fire onPlay again
+                // without a fresh onActivated, and the notification controls must still work.
+                MediaPlayback.stopOwner(id)
             }
 
             private fun secondsToMillis(seconds: Double): Long =
@@ -597,7 +606,9 @@ class EngineSession(
                     EnginePrompt.FilePick(
                         id = it,
                         mimeTypes = prompt.mimeTypes?.toList().orEmpty(),
-                        multiple = prompt.type != GeckoSession.PromptDelegate.FilePrompt.Type.SINGLE,
+                        // FOLDER is not a multi-file selection; treating it as one launched the
+                        // wrong SAF contract and returned files to a directory request.
+                        multiple = prompt.type == GeckoSession.PromptDelegate.FilePrompt.Type.MULTIPLE,
                         capture = prompt.capture,
                     )
                 }
@@ -767,10 +778,11 @@ class EngineSession(
     }
 
     /** Called by the host once the SAF picker returns; an empty list cancels the upload. */
-    fun answerFiles(uris: List<Uri>) {
-        val id = _prompt.value?.id ?: return
+    fun answerFiles(promptId: Long, uris: List<Uri>) {
+        val currentPrompt = _prompt.value
+        if (currentPrompt?.id != promptId) return
         _prompt.value = null
-        val pending = pendingPrompts.remove(id) ?: return
+        val pending = pendingPrompts.remove(promptId) ?: return
         if (pending.prompt.isComplete) return
         val prompt = pending.prompt as? GeckoSession.PromptDelegate.FilePrompt
         val response = when {
@@ -811,7 +823,9 @@ class EngineSession(
         )
     }
 
-    fun answerAndroidPermissions(granted: Boolean) {
+    fun answerAndroidPermissions(id: Long, granted: Boolean) {
+        // Ignore results from a superseded request; Gecko requires one answer per callback.
+        if (_androidPermissions.value?.id != id) return
         _androidPermissions.value = null
         val callback = pendingAndroidCallback ?: return
         pendingAndroidCallback = null
@@ -895,17 +909,31 @@ class EngineSession(
         }
     }
 
-    fun find(query: String, onResult: (GeckoSession.FinderResult) -> Unit) {
-        finder.find(query, 0).accept({ result -> if (result != null) onResult(result) }, { })
+    fun find(
+        query: String,
+        onResult: (GeckoSession.FinderResult) -> Unit,
+        onFailure: () -> Unit = {},
+    ) {
+        finder.find(query, 0).accept(
+            { result -> if (result != null) onResult(result) else onFailure() },
+            { onFailure() },
+        )
     }
 
-    fun findAgain(forward: Boolean, onResult: (GeckoSession.FinderResult) -> Unit) {
+    fun findAgain(
+        forward: Boolean,
+        onResult: (GeckoSession.FinderResult) -> Unit,
+        onFailure: () -> Unit = {},
+    ) {
         val flags = if (forward) {
             GeckoSession.FINDER_FIND_FORWARD
         } else {
             GeckoSession.FINDER_FIND_BACKWARDS
         }
-        finder.find(null, flags).accept({ result -> if (result != null) onResult(result) }, { })
+        finder.find(null, flags).accept(
+            { result -> if (result != null) onResult(result) else onFailure() },
+            { onFailure() },
+        )
     }
 
     fun clearFind() = finder.clear()

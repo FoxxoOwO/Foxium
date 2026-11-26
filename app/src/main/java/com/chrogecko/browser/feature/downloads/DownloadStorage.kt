@@ -68,12 +68,10 @@ object DownloadStorage {
 
     private fun fileTarget(context: Context, fileName: String): Target {
         val safeName = sanitizeFileName(fileName)
-        val directory = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        } else {
-            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-                ?: File(context.filesDir, "downloads")
-        }
+        // app-private external storage needs no WRITE_EXTERNAL_STORAGE permission; the old
+        // public-directory path failed with EACCES on API 26-28 without a runtime grant.
+        val directory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: File(context.filesDir, "downloads")
         directory.mkdirs()
         val base = safeName.substringBeforeLast('.', safeName)
         val extension = safeName.substringAfterLast('.', "").let { if (it.isEmpty()) "" else ".$it" }

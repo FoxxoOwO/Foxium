@@ -165,13 +165,15 @@ class CastManager @Inject constructor(
             } else {
                 val message = "Chromecast rejected ${contentType}"
                 _errors.tryEmit(message)
-                updatePlayback() // roll back the optimistic "connected" state
+                // updatePlayback() would keep `connected = true` because the session is bound;
+                // the load result is authoritative, so clear the optimistic UI state entirely.
+                _playback.value = CastPlaybackState()
                 Result.failure(CastException(message))
             }
         }.getOrElse { error ->
             val message = error.message?.takeIf { it.isNotBlank() } ?: "Cast failed"
             _errors.tryEmit(message)
-            updatePlayback()
+            _playback.value = CastPlaybackState()
             Result.failure(error)
         }
     }

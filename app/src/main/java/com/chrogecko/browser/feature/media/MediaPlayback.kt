@@ -103,6 +103,19 @@ object MediaPlayback {
         _state.value = replacement.value
     }
 
+    /** A media element stopped, but its session can still resume: keep transport callbacks. */
+    fun stopOwner(ownerId: String?) {
+        if (ownerId == null || activeOwnerId != ownerId) return
+        statesByOwner[ownerId]?.let { statesByOwner[ownerId] = it.copy(playing = false) }
+        _state.value = _state.value?.copy(playing = false)
+        if (statesByOwner.values.none { it.playing }) {
+            serviceRunning = false
+            context?.let { ctx ->
+                runCatching { ctx.stopService(Intent(ctx, MediaPlaybackService::class.java)) }
+            }
+        }
+    }
+
     /** The page stopped having a media session at all; tear the notification down. */
     fun release(ownerId: String? = null) {
         if (ownerId != null) {

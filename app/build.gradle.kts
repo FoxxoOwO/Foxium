@@ -1,3 +1,4 @@
+import com.android.build.api.variant.FilterConfiguration
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -55,7 +56,8 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            signingConfig = signingConfigs.findByName("release")
+            // Never silently produce an unsigned release APK.
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -87,6 +89,25 @@ android {
             "META-INF/AL2.0",
             "META-INF/LGPL2.1",
         )
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            val abi = output.filters
+                .firstOrNull { it.filterType == FilterConfiguration.FilterType.ABI }
+                ?.identifier
+            // Universal APK keeps the base code; each split gets a distinct higher code so a
+            // store can serve all four APKs for one release.
+            val abiCode = when (abi) {
+                "armeabi-v7a" -> 1
+                "arm64-v8a" -> 2
+                "x86_64" -> 3
+                else -> 0
+            }
+            if (abiCode != 0) output.versionCode.set(output.versionCode.get() + abiCode)
+        }
     }
 }
 

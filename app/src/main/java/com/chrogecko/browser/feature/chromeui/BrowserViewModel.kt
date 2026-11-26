@@ -1210,8 +1210,8 @@ class BrowserViewModel @Inject constructor(
         setSiteRule(clean, false, false)
     }
 
-    private val _printFile = MutableStateFlow<File?>(null)
-    val printFile: StateFlow<File?> = _printFile.asStateFlow()
+    private val _printFile = MutableStateFlow<Pair<String, File>?>(null)
+    val printFile: StateFlow<Pair<String, File>?> = _printFile.asStateFlow()
 
     /** Asks Gecko to render the active page to PDF; [printFile] receives the result. */
     fun printPage() {
@@ -1264,6 +1264,9 @@ class BrowserViewModel @Inject constructor(
         val tab = activeTab.value ?: return
         clearSuggestions()
         _omniboxFocused.value = false
+        // A new navigation invalidates any active find-in-page results and selection.
+        _find.value = FindState()
+        clearSelection()
         if (responseIsUserscript(target)) {
             installUserscript(target)
             return
@@ -1351,12 +1354,13 @@ class BrowserViewModel @Inject constructor(
     fun answerAuth(user: String, password: String) =
         promptSession?.answerAuth(user, password)
 
-    fun answerFiles(uris: List<android.net.Uri>) = promptSession?.answerFiles(uris)
+    fun answerFiles(promptId: Long, uris: List<android.net.Uri>) =
+        promptSession?.answerFiles(promptId, uris)
 
     fun answerPermission(allow: Boolean) = permissionSession?.answerPermission(allow)
 
-    fun answerAndroidPermissions(granted: Boolean) =
-        androidPermissionSession?.answerAndroidPermissions(granted)
+    fun answerAndroidPermissions(id: Long, granted: Boolean) =
+        androidPermissionSession?.answerAndroidPermissions(id, granted)
 
     fun copySelection() = activeTab.value?.session?.copySelection()
 
@@ -1632,18 +1636,24 @@ class BrowserViewModel @Inject constructor(
             _find.update { it.copy(found = false, total = 0, current = 0) }
             return
         }
-        session.find(query) { result ->
-            if (activeTab.value?.session !== session || !_find.value.visible || _find.value.query != query) {
-                return@find
-            }
-            _find.update {
-                it.copy(
-                    found = result.found,
-                    total = result.total.coerceAtLeast(0),
-                    current = result.current,
-                )
-            }
-        }
+        session.find(
+            query,
+            onResult = { result ->
+                if (activeTab.value?.session !== session || !_find.value.visible || _find.value.query != query) {
+                    return@find
+                }
+                _find.update {
+                    it.copy(
+                        found = result.found,
+                        total = result.total.coerceAtLeast(0),
+                        current = result.current,
+                    )
+                }
+            },
+            onFailure = {
+                _find.update { it.copy(found = false, total = 0, current = 0) }
+            },
+        )
     }
 
     fun findNext() = findAgain(forward = true)
@@ -1654,18 +1664,24 @@ class BrowserViewModel @Inject constructor(
         val session = activeTab.value?.session ?: return
         val query = _find.value.query
         if (query.isBlank()) return
-        session.findAgain(forward) { result ->
-            if (activeTab.value?.session !== session || !_find.value.visible || _find.value.query != query) {
-                return@findAgain
-            }
-            _find.update {
-                it.copy(
-                    found = result.found,
-                    total = result.total.coerceAtLeast(0),
-                    current = result.current,
-                )
-            }
-        }
+        session.findAgain(
+            forward,
+            onResult = { result ->
+                if (activeTab.value?.session !== session || !_find.value.visible || _find.value.query != query) {
+                    return@findAgain
+                }
+                _find.update {
+                    it.copy(
+                        found = result.found,
+                        total = result.total.coerceAtLeast(0),
+                        current = result.current,
+                    )
+                }
+            },
+            onFailure = {
+                _find.update { it.copy(found = false, total = 0, current = 0) }
+            },
+        )
     }
 
     fun closeFind() {
@@ -2229,7 +2245,7 @@ class BrowserViewModel @Inject constructor(
             createChildSession(current.isPrivate, current.groupId, uri, parentTabId = tab.id)
         }
         tab.session.closeRequestHandler = { closeTab(tab.id, recordUndo = false) }
-        tab.session.printHandler = { file -> _printFile.value = file }
+        tab.session.printHandler = { file -> _printFile.value = tab.id to file }
         // Applied on each load request so the rules affect the document that is loading.
         tab.session.siteRuleApplier = { host ->
             val rule = siteRuleCache[host] ?: siteRuleCache[host.removePrefix("www.")]

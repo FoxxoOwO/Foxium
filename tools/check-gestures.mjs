@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const GESTURES_JS = readFileSync("app/src/main/assets/extensions/sys_gestures/content.js", "utf8");
+const GESTURES_JS = readFileSync(
+  new URL("../app/src/main/assets/extensions/sys_gestures/content.js", import.meta.url),
+  "utf8",
+);
 
 function runHarness() {
   const windowListeners = new Map();

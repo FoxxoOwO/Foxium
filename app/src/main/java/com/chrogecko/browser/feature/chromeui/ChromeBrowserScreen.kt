@@ -66,6 +66,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -285,12 +286,17 @@ private fun ChromeBrowserContent(
         }
     }
 
+    val pendingAndroidAskId = remember { mutableLongStateOf(-1L) }
     val runtimePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { granted -> viewModel.answerAndroidPermissions(granted.values.all { it }) }
+    ) { granted ->
+        val id = pendingAndroidAskId.longValue
+        if (id >= 0) viewModel.answerAndroidPermissions(id, granted.values.all { it })
+    }
 
     LaunchedEffect(androidPermissions) {
         val ask = androidPermissions ?: return@LaunchedEffect
+        pendingAndroidAskId.longValue = ask.id
         runtimePermissionLauncher.launch(ask.permissions.toTypedArray())
     }
 
@@ -315,8 +321,9 @@ private fun ChromeBrowserContent(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> viewModel.onNotificationPermissionResult(granted) }
     LaunchedEffect(printFile) {
-        val pdf = printFile ?: return@LaunchedEffect
-        printPdf(context, activeTab?.state?.title.orEmpty(), pdf)
+        val (tabId, pdf) = printFile ?: return@LaunchedEffect
+        val title = viewModel.tabs.value.firstOrNull { it.id == tabId }?.state?.title.orEmpty()
+        printPdf(context, title, pdf)
         viewModel.consumePrint()
     }
 

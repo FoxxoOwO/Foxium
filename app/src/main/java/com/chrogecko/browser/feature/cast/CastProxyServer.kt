@@ -316,8 +316,12 @@ class CastProxyServer @Inject constructor(
                 .url(nextUrl)
                 .apply {
                     if (!sameOrigin) {
-                        removeHeader("Cookie")
-                        removeHeader("Authorization")
+                        // Strip every captured header that could identify the user or carry
+                        // credentials; only generic transport headers may follow a redirect.
+                        val safeNames = setOf("user-agent", "accept", "accept-encoding", "range")
+                        current.headers.names().forEach { name ->
+                            if (name.lowercase() !in safeNames) removeHeader(name)
+                        }
                     }
                 }
                 .build()
@@ -356,7 +360,8 @@ class CastProxyServer @Inject constructor(
         val target = explicitChild ?: stream.media.url
         val targetUri = runCatching { URI(target) }.getOrNull()
         val targetHost = targetUri?.host
-        if (targetUri == null || targetHost.isNullOrBlank() || (targetUri.scheme != "http" && targetUri.scheme != "https")) {
+        val targetScheme = targetUri?.scheme?.lowercase()
+        if (targetUri == null || targetHost.isNullOrBlank() || (targetScheme != "http" && targetScheme != "https")) {
             call.respond(HttpStatusCode.BadRequest)
             return
         }
@@ -383,7 +388,9 @@ class CastProxyServer @Inject constructor(
                     stream.media.headers.forEach { (name, value) ->
                         val lower = name.lowercase()
                         if (lower in FORBIDDEN_REQUEST_HEADERS || value.isBlank()) return@forEach
-                        if ((lower == "cookie" || lower == "authorization") && !sameOrigin) return@forEach
+                        // A child on another origin must not receive captured Referer (which may
+                        // contain tokens) or custom auth headers, not just Cookie/Authorization.
+                        if (!sameOrigin && lower != "user-agent") return@forEach
                         // Captured headers can contain invalid characters; skip them instead of
                         // throwing from the request builder and failing the whole proxy response.
                         runCatching { header(name, value) }
@@ -464,16 +471,18 @@ class CastProxyServer @Inject constructor(
 
             appendCors(call)
             response.header("Content-Range")?.let { call.response.headers.append("Content-Range", it) }
+            // Only advertise range support when the upstream actually does. Synthesising it makes
+            // receivers send Range requests that return a full 200 body and break seeking.
             response.header("Accept-Ranges")?.let {
                 call.response.headers.append("Accept-Ranges", it)
-            } ?: call.response.headers.append("Accept-Ranges", "bytes")
+            }
             response.header("Content-Disposition")?.let {
                 call.response.headers.append("Content-Disposition", it)
             }
 
             val contentType = response.header("Content-Type")?.let { header ->
                 runCatching { ContentType.parse(header) }.getOrNull()
-            } ?: ContentType.parse(contentTypeFor(stream.media))
+            } ?: ContentType.parse(contentTypeForUrl(response.request.url.toString()))
             val length = response.body?.contentLength()?.takeIf { it >= 0 }
             val status = HttpStatusCode.fromValue(response.code)
 
@@ -516,22 +525,36 @@ class CastProxyServer @Inject constructor(
         proxy: (String) -> String,
     ): String {
         val base = runCatching { URI(baseUrl) }.getOrNull() ?: return xml
+        val sentinels = mutableListOf<String>()
+        // Protect $Number$ / $Representation$ placeholders while resolving and encoding the URL,
+        // then restore them unencoded so the receiver can still expand SegmentTemplate values.
+        fun protect(reference: String): String = DASH_TEMPLATE.replace(reference) { match ->
+            val token = "CGTPL${sentinels.size}END"
+            sentinels += match.value
+            token
+        }
+        fun restore(proxied: String): String {
+            var result = proxied.replace("%24", "$")
+            sentinels.forEachIndexed { index, template ->
+                result = result.replace("CGTPL${index}END", template)
+            }
+            return result
+        }
         val withAttributes = DASH_ATTRIBUTE.replace(xml) { match ->
             val attribute = match.groupValues[1]
             val reference = decodeXmlEntities(match.groupValues[2].trim())
-            if (reference.contains("$") || reference.startsWith("data:")) return@replace match.value
-            val resolved = runCatching { base.resolve(reference).toString() }.getOrNull()
+            if (reference.startsWith("data:")) return@replace match.value
+            val resolved = runCatching { base.resolve(protect(reference)).toString() }.getOrNull()
                 ?: return@replace match.value
-            if (!resolved.startsWith("http")) return@replace match.value
-            "$attribute=\"${proxy(resolved)}\""
+            if (!resolved.startsWith("http", ignoreCase = true)) return@replace match.value
+            "$attribute=\"${restore(proxy(resolved))}\""
         }
         return DASH_BASE_URL.replace(withAttributes) { match ->
             val reference = decodeXmlEntities(match.groupValues[1].trim())
-            if (reference.contains("$")) return@replace match.value
-            val resolved = runCatching { base.resolve(reference).toString() }.getOrNull()
+            val resolved = runCatching { base.resolve(protect(reference)).toString() }.getOrNull()
                 ?: return@replace match.value
-            if (!resolved.startsWith("http")) return@replace match.value
-            "<BaseURL>${proxy(resolved)}</BaseURL>"
+            if (!resolved.startsWith("http", ignoreCase = true)) return@replace match.value
+            "<BaseURL>${restore(proxy(resolved))}</BaseURL>"
         }
     }
 
@@ -541,6 +564,20 @@ class CastProxyServer @Inject constructor(
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
+
+    /** Fallback MIME type derived from the actual segment URL, not from the original manifest. */
+    private fun contentTypeForUrl(url: String): String {
+        val path = url.substringBefore('?')
+        return when {
+            path.endsWith(".m3u8", true) -> HLS_CONTENT_TYPE
+            path.endsWith(".mpd", true) -> DASH_CONTENT_TYPE
+            path.endsWith(".ts", true) -> "video/mp2t"
+            path.endsWith(".m4s", true) -> "video/iso.segment"
+            path.endsWith(".key", true) -> "application/octet-stream"
+            path.endsWith(".webm", true) -> "video/webm"
+            else -> "video/mp4"
+        }
+    }
 
     private fun contentTypeFor(media: CastMedia): String = when {
         media.isHls -> HLS_CONTENT_TYPE
@@ -627,5 +664,6 @@ class CastProxyServer @Inject constructor(
 
         val DASH_ATTRIBUTE = Regex("""(media|initialization|sourceURL)\s*=\s*"([^"]*)"""")
         val DASH_BASE_URL = Regex("""<BaseURL\b[^>]*>\s*([^<]+?)\s*</BaseURL>""")
+        val DASH_TEMPLATE = Regex("""\$[^$]+\$""")
     }
 }

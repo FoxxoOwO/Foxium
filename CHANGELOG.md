@@ -14,6 +14,14 @@ All notable changes to this project are documented in this file.
 - **UI:** the find-in-page field receives focus when opened; the add-shortcut tile no longer squeezes a full 4-tile row; the translate target follows system locale changes.
 - **Security:** the registrable-domain helper now understands shared-hosting suffixes (`github.io`, `s3.amazonaws.com`, `co.kr`, …) so tenants cannot be treated as the same site.
 
+## [Unreleased]
+
+### Fixed
+
+- **Cast:** a rejected/timeout load no longer leaves the UI showing a connected player; uppercase-scheme HLS segments are accepted by the proxy; DASH `SegmentTemplate` placeholders are preserved while rewriting; child segments get a MIME type derived from their own URL; `Accept-Ranges` is only advertised when upstream supports it; captured `Referer` and custom headers no longer cross origins (including via redirects). Media stop keeps notification controls bound to the session.
+- **Engine:** Android permission and SAF file results are matched to the exact request id; find-in-page failures reset the counters and navigation clears stale find/selection state; `window.print()` in a background tab no longer hijacks the print UI; print results are keyed by tab; folder file prompts no longer use the multi-file SAF contract.
+- **Build:** split APKs now have distinct version codes (universal 89, armeabi-v7a 90, arm64-v8a 91, x86_64 92); release builds fail instead of silently producing unsigned APKs; KSP updated to 2.3.14; downloads on API 26–28 use app-private storage so no legacy storage permission is needed; test harnesses resolve scripts relative to the repository.
+
 ## [0.79.1] - 2026-11-25
 
 ### WebAuthn / passkeys
