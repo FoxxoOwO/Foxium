@@ -217,11 +217,11 @@ function trimHeaderCache() {
 }
 
 function onBeforeSendHeaders(details) {
-  if (details.tabId >= 0) {
-    headerCache.set(details.requestId, headerMap(details.requestHeaders));
-    trimHeaderCache();
-  }
+  // Cache headers only for media candidates: retaining Cookie/Authorization from every XHR on
+  // every site would expose session credentials to the extension and to the cast layer.
   if (details.tabId < 0 || !isCandidateUrl(details.url)) return {};
+  headerCache.set(details.requestId, headerMap(details.requestHeaders));
+  trimHeaderCache();
   const headers = headerMap(details.requestHeaders);
   const mime = guessMime(details.url);
   recordMedia(details.tabId, details.documentUrl || details.originUrl || "", "", {

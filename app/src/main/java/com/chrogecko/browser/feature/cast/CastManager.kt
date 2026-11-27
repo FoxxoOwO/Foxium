@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asExecutor
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -211,7 +212,13 @@ class CastManager @Inject constructor(
     }
 
     fun release() {
+        // Stop all collectors before tearing down the proxy so no callback can re-register or
+        // flush against a released server.
+        scope.cancel()
+        started.set(false)
         remote?.unregisterCallback(remoteCallback)
+        remote = null
+        session = null
         castContext?.sessionManager?.removeSessionManagerListener(
             sessionListener,
             CastSession::class.java,

@@ -19,6 +19,8 @@ function makeField(attrs, form) {
     getAttribute(name) {
       return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null;
     },
+    closest: () => null,
+    parentElement: null,
     focusCount: 0,
     blurCount: 0,
     focus() {
@@ -117,6 +119,7 @@ function runHarness() {
 
   const sandbox = {
     document,
+    console,
     location: { hostname: "shop.example" },
     HTMLInputElement: { prototype: {} },
     HTMLTextAreaElement: { prototype: {} },
@@ -145,12 +148,15 @@ function runHarness() {
   dispatchDoc("focusin", { target: shippingForm.fields[0] });
   assert.equal(sentMessages.length, 1);
   assert.equal(sentMessages[0].kind, "address");
+  const shippingReport = sentMessages.at(-1);
+  assert.ok(shippingReport.fields.length >= 3, "focus report must carry opaque field ids");
 
   document.activeElement = body;
   dispatchDoc("focusout", { target: shippingForm.fields[0] });
 
   dispatchMessage({
     type: "autofill/fill",
+    fields: shippingReport.fields,
     values: {
       email: "alice@example.com",
       name: "Alice Novak",
@@ -184,11 +190,22 @@ function runHarness() {
 
   document.activeElement = standalone.fields[0];
   dispatchDoc("focusin", { target: standalone.fields[0] });
+  const standaloneReport = sentMessages.at(-1);
   document.activeElement = body;
   dispatchDoc("focusout", { target: standalone.fields[0] });
-  dispatchMessage({ type: "autofill/fill", values: { email: "standalone@example.com", name: "Wrong" } });
+
+  // A field injected by the page after the report has no opaque id and must stay empty.
+  const injected = makeField({ autocomplete: "cc-number" }, null);
+  allFields.push(injected);
+
+  dispatchMessage({
+    type: "autofill/fill",
+    fields: standaloneReport.fields,
+    values: { email: "standalone@example.com", name: "Wrong", "cc-number": "4111111111111111" },
+  });
   assert.equal(standalone.fields[0].value, "standalone@example.com");
   assert.equal(unrelated.fields[0].value, "");
+  assert.equal(injected.value, "");
 }
 
 runHarness();

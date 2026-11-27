@@ -223,6 +223,8 @@
   const ADD_TO_FIREFOX = /^(add to firefox|přidat do firefoxu|install extension)\b/i;
   addEventListener("click", (event) => {
     try {
+      // Installing an extension requires a genuine user gesture, not a page-synthesised click.
+      if (event.isTrusted !== true || event.button !== 0) return;
       const host = new URL(location.href).hostname.toLowerCase().replace(/^www\./, "");
       if (host !== "addons.mozilla.org") return;
       let node = event.target;

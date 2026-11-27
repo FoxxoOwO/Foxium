@@ -68,6 +68,22 @@ class UserScriptFeature @Inject constructor(
     private val _status = MutableStateFlow<Map<Long, List<InjectedScriptStatus>>>(emptyMap())
     val status: StateFlow<Map<Long, List<InjectedScriptStatus>>> = _status.asStateFlow()
 
+    /** Drop per-tab caches when a tab closes; both maps are process-wide singletons. */
+    fun clearTab(tabId: Long, url: String? = null) {
+        _status.update { it - tabId }
+        if (url != null) _menuCommands.update { it - url }
+    }
+
+    private fun <T> boundInsert(current: Map<Long, T>, tabId: Long, value: T): Map<Long, T> {
+        val next = current.toMutableMap()
+        next[tabId] = value
+        while (next.size > MAX_TRACKED_TABS) {
+            val oldest = next.keys.firstOrNull() ?: break
+            next.remove(oldest)
+        }
+        return next
+    }
+
     private val _menuCommands = MutableStateFlow<Map<String, List<UserScriptMenuCommand>>>(emptyMap())
     val menuCommands: StateFlow<Map<String, List<UserScriptMenuCommand>>> = _menuCommands.asStateFlow()
 
@@ -144,7 +160,9 @@ class UserScriptFeature @Inject constructor(
             installedAt = existing.installedAt,
             updatedAt = System.currentTimeMillis(),
         )
-        repository.save(updated)
+        if (!repository.save(updated)) {
+            throw UserScriptParseException("Another script already uses this name and namespace")
+        }
         updated
     }
 
@@ -183,7 +201,9 @@ class UserScriptFeature @Inject constructor(
             installedAt = existing.installedAt,
             updatedAt = System.currentTimeMillis(),
         )
-        repository.save(updated)
+        if (!repository.save(updated)) {
+            throw UserScriptParseException("Another script already uses this name and namespace")
+        }
         updated
     }
 
@@ -219,7 +239,7 @@ class UserScriptFeature @Inject constructor(
                         error = item.optString("error").ifBlank { null },
                     )
                 }
-                _status.update { it + (tabId to statuses) }
+                _status.update { boundInsert(it, tabId, statuses) }
             }
             "userscripts/menu" -> {
                 val tabId = event.payload.optLong("tabId", -1L)
@@ -359,6 +379,7 @@ class UserScriptFeature @Inject constructor(
     companion object {
         private const val MAX_SCRIPT_BYTES = 4L * 1024L * 1024L
         private const val MAX_MENU_URLS = 50
+        private const val MAX_TRACKED_TABS = 64
         private val VERSION_SPLIT = Regex("[^A-Za-z0-9]+")
 
         /** Compares dotted versions; numeric segments beat alphanumeric prerelease tags. */

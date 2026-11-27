@@ -201,9 +201,13 @@ fun UserscriptEditorDialog(
     onDismiss: () -> Unit,
 ) {
     var source by remember(script.id) { mutableStateOf(script.source) }
-    // The script can be replaced with the same id (e.g. after an update check); do not save stale
-    // text over the newer source.
-    LaunchedEffect(script.source) { source = script.source }
+    var original by remember(script.id) { mutableStateOf(script.source) }
+    // Refresh an untouched buffer when the script changes externally, but never overwrite edits
+    // the user is currently typing.
+    LaunchedEffect(script.source) {
+        if (source == original) source = script.source
+        original = script.source
+    }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),

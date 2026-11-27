@@ -131,6 +131,10 @@ let lastSignature = "";
 let lastFocusedForm = null;
 let lastFocusedField = null;
 let filling = false;
+/** Opaque ids for the fields we reported: a page-injected hidden input has no id and is never filled. */
+const fieldById = new Map();
+const idByField = new WeakMap();
+let nextFieldId = 1;
 
 function reportFocus(event) {
   if (filling) return;
@@ -140,8 +144,24 @@ function reportFocus(event) {
   if (!focusToken) return;
   lastFocusedForm = field.form || null;
   lastFocusedField = field;
-  const fields = formFields(field);
-  const tokens = tokensOf(fields);
+  // Never fall back to the whole document: that would let a page add hidden inputs that receive
+  // the user's saved card/address values after a single consent click.
+  const scope = field.form || field.closest("form, [data-autofill-scope]") || field.parentElement;
+  const fields = formFields(scope || field);
+  const candidates = [];
+  const tokens = [];
+  for (const candidate of fields) {
+    const token = guessToken(candidate);
+    if (!token || tokens.includes(token)) continue;
+    let id = idByField.get(candidate);
+    if (id === undefined) {
+      id = nextFieldId++;
+      idByField.set(candidate, id);
+      fieldById.set(id, candidate);
+    }
+    candidates.push({ id, token });
+    tokens.push(token);
+  }
   const kind = tokens.some((token) => CARD_TOKENS.includes(token)) ? "card" : "address";
   if (!tokens.some((token) => (kind === "card" ? CARD_TOKENS : ADDRESS_TOKENS).includes(token))) return;
   const signature = kind + "|" + tokens.join(",") + "|" + (location.hostname || "");
@@ -151,6 +171,7 @@ function reportFocus(event) {
     type: "autofill/fields",
     kind,
     tokens,
+    fields: candidates,
     host: location.hostname || "",
   });
 }
@@ -163,19 +184,14 @@ document.addEventListener("focusout", () => {
 browser.runtime.onMessage.addListener((message) => {
   if (!message || message.type !== "autofill/fill") return;
   const values = message.values || {};
-  const active = document.activeElement;
-  const remembered = lastFocusedField && lastFocusedField.isConnected !== false ? lastFocusedField : null;
-  const scope = (active && active.form) ||
-    (remembered && remembered.form) ||
-    (remembered && remembered.closest("form, [data-autofill-scope]")) ||
-    (remembered && remembered.parentElement) ||
-    document;
   filling = true;
   try {
-    const fields = formFields(scope);
-    for (const field of fields) {
-      const token = guessToken(field);
-      if (token && values[token] !== undefined) setValue(field, values[token]);
+    // Fill only the exact fields we reported. A page cannot inject extra ids into that set.
+    const reported = Array.isArray(message.fields) ? message.fields : [];
+    for (const candidate of reported) {
+      if (!candidate || values[candidate.token] === undefined) continue;
+      const field = fieldById.get(candidate.id);
+      if (field && field.isConnected !== false) setValue(field, values[candidate.token]);
     }
   } finally {
     filling = false;

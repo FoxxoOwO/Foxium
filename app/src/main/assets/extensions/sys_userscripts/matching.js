@@ -59,6 +59,8 @@ function matchPattern(pattern, url) {
 
 function includeMatches(pattern, url) {
   if (pattern.length > 2 && pattern.startsWith("/") && pattern.endsWith("/")) {
+    // Long regex patterns can backtrack catastrophically on a URL and freeze the background page.
+    if (pattern.length > 256) return false;
     try {
       return new RegExp(pattern.slice(1, -1)).test(url);
     } catch (error) {

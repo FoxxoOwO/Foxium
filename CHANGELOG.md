@@ -31,6 +31,15 @@ All notable changes to this project are documented in this file.
 - **RTL:** omnibox swipe-to-switch-tab is direction-aware and the shortcut remove badge no longer shifts inward.
 - **Test harnesses:** dark-mode and reader checks now execute the scripts instead of matching source text; userscript plan-full/injected relays, expander reconfiguration and other native payloads are asserted; harnesses are portable across working directories.
 
+## [Unreleased]
+
+### Fixed
+
+- **Security:** userscript `@require`, `@resource` and `GM_xmlhttpRequest` now validate every redirect hop instead of following a public URL into loopback/metadata endpoints; `@include`/`@exclude` regex length is capped; AMO install clicks require a trusted primary gesture; media sniffer caches headers only for media candidates.
+- **Autofill:** fields are identified by opaque ids generated in the content script and filled only when the user selects an entry; page-injected hidden inputs can no longer receive saved card/address values.
+- **Add-ons/userscripts:** editing a script into another script's `(namespace, name)` is rejected instead of REPLACE-deleting it; disabled extensions drop their action/badge/popup; the editor no longer overwrites in-progress text on external updates; per-tab status maps are bounded and cleared; popup GeckoSessions are closed on ViewModel teardown.
+- **Background work:** permission-request flows buffer multiple requests; Cast `release()` cancels its collectors before tearing down the proxy.
+
 ## [0.79.1] - 2026-11-25
 
 ### WebAuthn / passkeys

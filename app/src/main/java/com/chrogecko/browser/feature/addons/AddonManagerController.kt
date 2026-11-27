@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.mozilla.geckoview.AllowOrDeny
@@ -254,6 +255,12 @@ class AddonManagerController @Inject constructor(
             controller.enable(extension, WebExtensionController.EnableSource.USER)
         } else {
             controller.disable(extension, WebExtensionController.EnableSource.USER)
+        }
+        if (!enabled) {
+            // A disabled extension must not keep its action badge or popup alive.
+            actionStates.remove(id)
+            if (_popup.value?.extensionId == id) closePopup()
+            _addons.update { list -> list.map { if (it.id == id) it.copy(hasAction = false, badgeText = null) else it } }
         }
         operation.accept(
             { refresh() },

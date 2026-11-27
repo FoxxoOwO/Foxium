@@ -141,7 +141,15 @@ class DarkModeFeature @Inject constructor(
                     mode = event.payload.optString("mode"),
                     pageWasDark = event.payload.optBoolean("pageWasDark"),
                 )
-                _status.update { it + (tabId to entry) }
+                _status.update { current ->
+                    val next = current.toMutableMap()
+                    next[tabId] = entry
+                    while (next.size > MAX_TRACKED_TABS) {
+                        val oldest = next.keys.firstOrNull() ?: break
+                        next.remove(oldest)
+                    }
+                    next
+                }
             }
         }
     }
@@ -177,6 +185,8 @@ class DarkModeFeature @Inject constructor(
     }
 
     companion object {
+        private const val MAX_TRACKED_TABS = 64
+
         /** Extracts a lowercase host for per-site rules. */
         fun hostOf(url: String): String? = runCatching {
             URI(url).host?.lowercase()?.trimEnd('.')

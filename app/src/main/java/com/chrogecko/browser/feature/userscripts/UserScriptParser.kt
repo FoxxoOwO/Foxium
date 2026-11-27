@@ -34,6 +34,8 @@ object UserScriptParser {
 
     private const val START = "==UserScript=="
     private const val END = "==/UserScript=="
+    private const val MAX_PATTERN_LENGTH = 512
+    private val PATTERN_KEYS = setOf("match", "include", "exclude", "exclude-match")
 
     fun parse(rawSource: String): ParsedUserScript {
         val source = rawSource.removePrefix("\uFEFF")
@@ -66,6 +68,9 @@ object UserScriptParser {
             val key = rawKey.substringBefore(':')
             val value = result.groupValues[2].trim()
             if (value.isEmpty()) return@forEach
+            // A pathological regex @include would block the extension's background page while
+            // building the plan for every frame; cap pattern length at install time.
+            if (key in PATTERN_KEYS && value.length > MAX_PATTERN_LENGTH) return@forEach
             when (key) {
                 "name" -> if (localizedKey) {
                     if (localizedName.isEmpty()) localizedName = value

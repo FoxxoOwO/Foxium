@@ -28,6 +28,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -90,7 +91,10 @@ class AppUpdateManager @Inject constructor(
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
 
-    private val _notificationPermissionRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val _notificationPermissionRequests = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
     val notificationPermissionRequests: SharedFlow<Unit> = _notificationPermissionRequests
 
     private val downloading = AtomicBoolean(false)

@@ -203,16 +203,37 @@ function isAllowedRemoteUrl(rawUrl, httpsOnly) {
   return !isBlockedXhrHost(parsed.hostname);
 }
 
+/**
+ * Fetch with manual redirects: `redirect: "follow"` would bypass the host allowlist as soon as a
+ * public URL redirected to loopback or a metadata endpoint. Every hop is validated again.
+ */
+async function safeFetch(rawUrl, options, httpsOnly) {
+  let current = String(rawUrl);
+  for (let hop = 0; hop < 5; hop += 1) {
+    if (!isAllowedRemoteUrl(current, httpsOnly)) {
+      throw new Error("Blocked unsafe URL: " + current);
+    }
+    const response = await fetch(current, { ...options, redirect: "manual" });
+    const location = response.headers.get("Location");
+    if (response.status >= 300 && response.status < 400 && location) {
+      current = new URL(location, current).toString();
+      continue;
+    }
+    return response;
+  }
+  throw new Error("Too many redirects");
+}
+
 async function fetchRequire(url) {
   try {
     if (!isAllowedRemoteUrl(url, true)) {
       throw new Error("Blocked unsafe or non-https @require URL");
     }
-    const response = await fetch(url, {
-      credentials: "omit",
-      cache: "force-cache",
-      redirect: "follow",
-    });
+    const response = await safeFetch(
+      url,
+      { credentials: "omit", cache: "force-cache" },
+      true,
+    );
     if (!response.ok) throw new Error("HTTP " + response.status);
     const text = await response.text();
     return { code: text.slice(0, MAX_REQUIRE_BYTES), fetchedAt: Date.now() };
@@ -261,7 +282,7 @@ async function resolveResources(map, quick = false) {
       if (!isAllowedRemoteUrl(resourceUrl, false)) {
         throw new Error("Blocked unsafe @resource URL");
       }
-      const response = await fetch(resourceUrl, { credentials: "omit" });
+      const response = await safeFetch(resourceUrl, { credentials: "omit" }, false);
       if (!response.ok) throw new Error("HTTP " + response.status);
       const buffer = await response.arrayBuffer();
       if (buffer.byteLength > RESOURCE_MAX_BYTES) throw new Error("resource too large");
@@ -380,15 +401,18 @@ async function handleXhr(details) {
   // A body is illegal on GET/HEAD, and `undefined` is not a valid fetch body in Gecko either.
   const hasBody = method !== "GET" && method !== "HEAD" && details.data != null;
   try {
-    const response = await fetch(details.url, {
-      method,
-      headers,
-      ...(hasBody ? { body: details.data } : {}),
-      credentials: details.anonymous ? "omit" : "include",
-      redirect: "follow",
-      signal: controller.signal,
-      cache: "no-store",
-    });
+    const response = await safeFetch(
+      details.url,
+      {
+        method,
+        headers,
+        ...(hasBody ? { body: details.data } : {}),
+        credentials: details.anonymous ? "omit" : "include",
+        signal: controller.signal,
+        cache: "no-store",
+      },
+      false,
+    );
     const buffer = await response.arrayBuffer();
     const responseHeaders = Array.from(response.headers.entries())
       .map(([name, value]) => name + ": " + value)

@@ -86,6 +86,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import java.io.File
 import javax.inject.Inject
+import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -613,6 +614,7 @@ class BrowserViewModel @Inject constructor(
     private val _autofillKind = MutableStateFlow("address")
     val autofillKind: StateFlow<String> = _autofillKind.asStateFlow()
     private var autofillTabId: Long = -1L
+    private var autofillFieldIds: List<Int> = emptyList()
     private val _mirrorUrl = MutableStateFlow<String?>(null)
     val mirrorUrl: StateFlow<String?> = _mirrorUrl.asStateFlow()
     val allCastMedia: StateFlow<Map<Long, List<CastMedia>>> = cast.media
@@ -950,6 +952,7 @@ class BrowserViewModel @Inject constructor(
         }
         _tabs.update { list -> list.filterNot { it.id == id } }
         observers.remove(id)?.cancel()
+        userscripts.clearTab(-1L, tab.state.url.takeIf { it.isNotBlank() })
         iconQueriedUrls.remove(id)
         lastRecordedUrls.remove(id)
         engine.closeSession(id)
@@ -2148,6 +2151,9 @@ class BrowserViewModel @Inject constructor(
         val tabId = event.payload.optLong("tabId", -1L)
         if (tabId < 0) return
         autofillTabId = tabId
+        val fields = event.payload.optJSONArray("fields")
+        autofillFieldIds = (0 until (fields?.length() ?: 0))
+            .mapNotNull { fields?.optInt(it)?.takeIf { id -> id >= 0 } }
         _autofillKind.value = if (kind == "card") "card" else "address"
         viewModelScope.launch {
             _autofillOptions.value = if (_autofillKind.value == "card") {
@@ -2179,6 +2185,7 @@ class BrowserViewModel @Inject constructor(
                 JSONObject()
                     .put("type", "autofill/fill")
                     .put("tabId", tabId)
+                    .put("fields", JSONArray(autofillFieldIds))
                     .put("values", JSONObject(values as Map<*, *>)),
             )
         }
@@ -2380,6 +2387,8 @@ class BrowserViewModel @Inject constructor(
 
     override fun onCleared() {
         observers.values.forEach(Job::cancel)
+        // A popup sheet disposed without onDismissRequest must not leave its GeckoSession open.
+        addons.closePopup()
         engine.closeAll()
     }
 

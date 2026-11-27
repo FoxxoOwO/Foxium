@@ -230,6 +230,8 @@ function runHarness() {
   };
   const clickEvent = {
     target: amoNode,
+    isTrusted: true,
+    button: 0,
     defaultPrevented: false,
     preventDefault() {
       this.defaultPrevented = true;

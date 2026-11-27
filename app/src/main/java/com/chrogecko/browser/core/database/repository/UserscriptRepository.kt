@@ -28,8 +28,12 @@ class UserscriptRepository @Inject constructor(private val dao: UserscriptDao) {
         return merged
     }
 
-    suspend fun save(script: UserscriptEntity) {
+    /** False when a different script already owns (namespace, name): REPLACE would delete it. */
+    suspend fun save(script: UserscriptEntity): Boolean {
+        val conflict = dao.findByNamespaceAndName(script.namespace, script.name)
+        if (conflict != null && conflict.id != script.id) return false
         dao.upsert(script.copy(updatedAt = System.currentTimeMillis()))
+        return true
     }
 
     suspend fun setEnabled(id: String, enabled: Boolean) {

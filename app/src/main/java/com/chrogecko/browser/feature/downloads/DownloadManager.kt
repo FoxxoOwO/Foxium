@@ -25,6 +25,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -51,7 +52,10 @@ class DownloadManager @Inject constructor(
 ) {
     val downloads: Flow<List<DownloadEntity>> = repository.downloads
 
-    private val _notificationPermissionRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val _notificationPermissionRequests = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
 
     /** Fires when a download needs the notification permission the app has not been granted yet. */
     val notificationPermissionRequests: SharedFlow<Unit> = _notificationPermissionRequests
