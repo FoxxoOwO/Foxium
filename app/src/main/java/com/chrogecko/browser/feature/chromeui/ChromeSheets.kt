@@ -49,6 +49,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -436,12 +439,14 @@ fun CastSheet(
                     Column(Modifier.weight(1f)) {
                         Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            "${item.kind.uppercase()} · ${item.mime.ifBlank { "media" }}",
+                            "${item.kind.uppercase()} · ${item.mime.ifBlank { stringResource(R.string.media_unknown) }}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Button(onClick = { onCast(item) }) { Text(stringResource(R.string.cast_title)) }
+                    Button(onClick = { onCast(item) }) {
+                        Text(stringResource(R.string.cast_media_action))
+                    }
                 }
                 HorizontalDivider()
             }
@@ -503,7 +508,11 @@ fun GroupEditDialog(
                             color = Color(paletteColor),
                             modifier = Modifier
                                 .size(32.dp)
-                                .clickable { color = paletteColor },
+                                .clickable { color = paletteColor }
+                                .semantics {
+                                    contentDescription = "#${paletteColor.toString(16).uppercase()}"
+                                    selected = color == paletteColor
+                                },
                             border = if (color == paletteColor) {
                                 BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface)
                             } else {

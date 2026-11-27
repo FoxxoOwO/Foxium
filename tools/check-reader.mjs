@@ -213,13 +213,58 @@ assert.equal(images[1].getAttribute("src"), "https://example.com/photo.png");
 
 assert.equal(sentMessages.length, 1);
 
-// A manual reader-off report must keep its userInitiated flag through the background relay,
+// Execute the background relay: a manual reader-off report must keep its userInitiated flag,
 // otherwise Kotlin re-activates reader mode on auto-reader sites.
-const backgroundSource = readFileSync(
-  new URL("../app/src/main/assets/extensions/sys_reader/background.js", import.meta.url),
-  "utf8",
+const nativeMessages = [];
+let backgroundListener;
+const nativePort = {
+  postMessage: (message) => nativeMessages.push(message),
+  onMessage: { addListener: () => {} },
+  onDisconnect: { addListener: () => {} },
+};
+const backgroundSandbox = {
+  URL,
+  Map,
+  Set,
+  setTimeout,
+  clearTimeout,
+  console,
+  browser: {
+    runtime: {
+      connectNative: () => nativePort,
+      getManifest: () => ({ version: "1.0.0" }),
+      onMessage: { addListener: (listener) => (backgroundListener = listener) },
+    },
+    tabs: { query: async () => [], sendMessage: async () => {} },
+  },
+};
+vm.createContext(backgroundSandbox);
+vm.runInContext(
+  readFileSync(
+    new URL("../app/src/main/assets/extensions/sys_reader/background.js", import.meta.url),
+    "utf8",
+  ),
+  backgroundSandbox,
+  { filename: "background.js" },
 );
-assert.match(backgroundSource, /userInitiated:\s*message\.userInitiated\s*===\s*true/);
+assert.ok(backgroundListener, "background did not register runtime.onMessage");
+await new Promise((resolve) => setTimeout(resolve, 10));
+backgroundListener(
+  {
+    type: "reader/state",
+    url: "https://example.com/article",
+    host: "example.com",
+    available: false,
+    active: false,
+    userInitiated: true,
+  },
+  { tab: { id: 7, url: "https://example.com/article" } },
+);
+const relayed = nativeMessages.find((message) => message.type === "reader/state");
+assert.ok(relayed, "background did not relay reader/state to native");
+assert.equal(relayed.userInitiated, true);
+assert.equal(relayed.tabId, 7);
+assert.equal(relayed.host, "example.com");
 assert.equal(sentMessages[0].type, "reader/ready");
 
 console.log("reader checks passed");

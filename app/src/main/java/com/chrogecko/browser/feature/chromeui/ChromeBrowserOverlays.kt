@@ -65,6 +65,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -221,7 +223,10 @@ internal fun TabGroupStrip(
                         border = if (isSelected) BorderStroke(2.dp, groupColor) else null,
                         modifier = Modifier
                             .size(38.dp)
-                            .clickable { onSelect(tab.id) },
+                            .clickable { onSelect(tab.id) }
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = displayTabTitle(tab, newTabLabel)
+                            },
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             val icon = faviconHost(tab.state.url)?.let(icons::get)

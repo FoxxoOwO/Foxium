@@ -191,6 +191,31 @@ const clearedMenu = nativeMessages.filter((message) => message.type === "userscr
 assert.equal(clearedMenu.commands.length, 0);
 assert.ok(tabRemovedListener, "tabs.onRemoved was not registered");
 
+// Two-phase plan delivery: a tab sender must get plan-full via tabs.sendMessage.
+const beforePlan = tabMessages.length;
+await runtimeListener(
+  { type: "userscripts/plan", url: "https://example.com/page" },
+  { tab: { id: 7, url: "https://example.com/page" } },
+);
+await new Promise((resolve) => setTimeout(resolve, 20));
+assert.ok(
+  tabMessages.slice(beforePlan).some((m) => m.message.type === "userscripts/plan-full"),
+  "tab plan must deliver a userscripts/plan-full message",
+);
+
+// The injected-status relay is the only source of per-script errors for Kotlin.
+runtimeListener(
+  {
+    type: "userscripts/injected",
+    url: "https://example.com/page",
+    scripts: [{ id: "1", status: "error", error: "boom" }],
+  },
+  { tab: { id: 7, url: "https://example.com/page" } },
+);
+const injected = nativeMessages.filter((m) => m.type === "userscripts/injected").at(-1);
+assert.equal(injected.tabId, 7);
+assert.equal(injected.scripts[0].error, "boom");
+
 const blockedXhr = await runtimeListener({
   type: "gm/xhr",
   details: { url: "http://127.0.0.1:8080/secret" },

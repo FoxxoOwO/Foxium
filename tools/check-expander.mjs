@@ -46,6 +46,7 @@ function field(initial = "") {
 
 let selectionMock = null;
 let execCommandImpl = () => false;
+let runtimeMessageListener;
 
 const document = {
   addEventListener(type, handler) {
@@ -86,7 +87,7 @@ const context = {
   browser: {
     runtime: {
       sendMessage: () => Promise.resolve(answer),
-      onMessage: { addListener() {} },
+      onMessage: { addListener: (listener) => (runtimeMessageListener = listener) },
     },
   },
 };
@@ -154,6 +155,21 @@ check("non-editable", area.value, ";sig ");
 area = field(";sig ");
 input({ isTrusted: false, target: area, composedPath: () => [area] });
 check("untrusted ignored", area.value, ";sig ");
+
+// 6. Live reconfiguration through expander/apply must replace the snippet table.
+if (!runtimeMessageListener) throw new Error("content script did not register runtime.onMessage");
+runtimeMessageListener({
+  type: "expander/apply",
+  config: {
+    enabled: true,
+    snippets: [{ trigger: ";addr", expansion: "1 Main St" }],
+  },
+});
+area = field(";addr ");
+input({ isTrusted: true, target: area, composedPath: () => [area] });
+check("reconfigured trigger", area.value, "1 Main St ");
+// Restore the original table for the remaining cases.
+runtimeMessageListener({ type: "expander/apply", config: answer });
 
 // 6. Placeholders are resolved at expansion time.
 area = field("d ");

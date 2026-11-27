@@ -15,6 +15,8 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.chrogecko.browser.R
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
@@ -361,12 +363,16 @@ private fun ProfileSwitcher(
             Spacer(Modifier.width(6.dp))
             Text(stringResource(R.string.tab_grid_tabs_label), maxLines = 1, style = MaterialTheme.typography.labelLarge)
         }
+        val incognitoToggleLabel = stringResource(R.string.new_incognito_tab)
         ToggleButton(
             checked = showPrivate,
             onCheckedChange = { if (it) onSelectPrivate(true) },
             shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
             colors = toggleColors,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.semantics {
+                contentDescription = incognitoToggleLabel
+            },
         ) {
             IncognitoBadgeIcon(
                 modifier = Modifier.size(18.dp),
@@ -603,7 +609,7 @@ private fun TabCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = onClose, modifier = Modifier.size(26.dp)) {
+                IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
                     Icon(
                         Icons.Rounded.Close,
                         contentDescription = stringResource(R.string.cd_close_tab),

@@ -22,6 +22,15 @@ All notable changes to this project are documented in this file.
 - **Engine:** Android permission and SAF file results are matched to the exact request id; find-in-page failures reset the counters and navigation clears stale find/selection state; `window.print()` in a background tab no longer hijacks the print UI; print results are keyed by tab; folder file prompts no longer use the multi-file SAF contract.
 - **Build:** split APKs now have distinct version codes (universal 89, armeabi-v7a 90, arm64-v8a 91, x86_64 92); release builds fail instead of silently producing unsigned APKs; KSP updated to 2.3.14; downloads on API 26–28 use app-private storage so no legacy storage permission is needed; test harnesses resolve scripts relative to the repository.
 
+## [Unreleased]
+
+### Fixed
+
+- **Localization:** Czech permission dialogs no longer read “Web Tento web…”; the Cast media action uses a real verb string instead of the dialog title, and the hardcoded English “media” fallback is localized.
+- **Accessibility:** the incognito toolbar/tab-grid toggles, tab-group sibling chips and group-color swatches now expose names and selection state to screen readers; small destructive controls keep a 48 dp touch target.
+- **RTL:** omnibox swipe-to-switch-tab is direction-aware and the shortcut remove badge no longer shifts inward.
+- **Test harnesses:** dark-mode and reader checks now execute the scripts instead of matching source text; userscript plan-full/injected relays, expander reconfiguration and other native payloads are asserted; harnesses are portable across working directories.
+
 ## [0.79.1] - 2026-11-25
 
 ### WebAuthn / passkeys

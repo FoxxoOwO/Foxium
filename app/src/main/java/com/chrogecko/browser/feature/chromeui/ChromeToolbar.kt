@@ -56,6 +56,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -121,6 +123,8 @@ internal fun ChromeToolbar(
 ) {
     val omniboxRequester = remember { FocusRequester() }
     val hapticView = LocalView.current
+    val incognitoTabsLabel = stringResource(R.string.tab_grid_tabs_label)
+    val layoutDirection = LocalLayoutDirection.current
     val currentOnSwipeTab by rememberUpdatedState(onSwipeTab)
     val currentOnPullDown by rememberUpdatedState(onPullDown)
     val focusManager = LocalFocusManager.current
@@ -198,7 +202,10 @@ internal fun ChromeToolbar(
                             .size(36.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                            .clickable(onClick = onOpenTabs),
+                            .clickable(onClick = onOpenTabs)
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = incognitoTabsLabel
+                            },
                         contentAlignment = Alignment.Center,
                     ) {
                         IncognitoBadgeIcon(
@@ -238,7 +245,12 @@ internal fun ChromeToolbar(
                                     if (focused) return@detectDragGestures
                                     if (abs(dragX) > 60f && abs(dragX) > abs(dragY)) {
                                         Haptics.gestureEnd(hapticView)
-                                        currentOnSwipeTab(if (dragX < 0) 1 else -1)
+                                        val logicalX = if (layoutDirection == LayoutDirection.Rtl) {
+                                            -dragX
+                                        } else {
+                                            dragX
+                                        }
+                                        currentOnSwipeTab(if (logicalX < 0) 1 else -1)
                                     } else if (dragY > 80f) {
                                         Haptics.gestureStart(hapticView)
                                         currentOnPullDown()

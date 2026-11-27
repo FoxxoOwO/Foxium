@@ -184,6 +184,8 @@
     <string name="no_app_can_open">Žádná aplikace neumí tento soubor otevřít</string>
     <string name="share_download">Sdílet stažený soubor</string>
     <string name="cast_title">Odesílání (Cast)</string>
+    <string name="cast_media_action">Přehrát na TV…</string>
+    <string name="media_unknown">média</string>
     <string name="connected">Připojeno</string>
     <string name="no_device_connected">Není připojeno žádné zařízení</string>
     <string name="mirror_this_screen">Zrcadlit tuto obrazovku</string>
@@ -206,15 +208,15 @@
     <string name="field_password">Heslo</string>
     <string name="permission_this_site">Tento web</string>
     <string name="permission_camera_title">Fotoaparát</string>
-    <string name="permission_camera_message">Web %1$s chce používat fotoaparát</string>
+    <string name="permission_camera_message">%1$s chce používat fotoaparát</string>
     <string name="permission_microphone_title">Mikrofon</string>
-    <string name="permission_microphone_message">Web %1$s chce používat mikrofon</string>
+    <string name="permission_microphone_message">%1$s chce používat mikrofon</string>
     <string name="permission_cam_mic_title">Fotoaparát a mikrofon</string>
-    <string name="permission_cam_mic_message">Web %1$s chce používat fotoaparát a mikrofon</string>
+    <string name="permission_cam_mic_message">%1$s chce používat fotoaparát a mikrofon</string>
     <string name="permission_location_title">Poloha</string>
-    <string name="permission_location_message">Web %1$s chce znát vaši polohu</string>
+    <string name="permission_location_message">%1$s chce znát vaši polohu</string>
     <string name="permission_notifications_title">Oznámení</string>
-    <string name="permission_notifications_message">Web %1$s chce zobrazovat oznámení</string>
+    <string name="permission_notifications_message">%1$s chce zobrazovat oznámení</string>
     <string name="permission_change_later">Toto nastavení můžete později změnit v Nastavení.</string>
 
     <!-- Password & Autofill Dialogs -->

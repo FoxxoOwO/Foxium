@@ -182,6 +182,8 @@
     <string name="no_app_can_open">No app can open this file</string>
     <string name="share_download">Share download</string>
     <string name="cast_title">Cast</string>
+    <string name="cast_media_action">Play on TV…</string>
+    <string name="media_unknown">media</string>
     <string name="connected">Connected</string>
     <string name="no_device_connected">No device connected</string>
     <string name="mirror_this_screen">Mirror this screen</string>
