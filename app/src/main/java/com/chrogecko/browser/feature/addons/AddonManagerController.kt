@@ -79,7 +79,8 @@ class AddonManagerController @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val started = AtomicBoolean(false)
     private val attached = ConcurrentHashMap.newKeySet<String>()
-    private val actionStates = ConcurrentHashMap<String, WebExtension.Action>()
+    private data class ActionKey(val extensionId: String, val session: GeckoSession?)
+    private val actionStates = ConcurrentHashMap<ActionKey, WebExtension.Action>()
     private val extensions = ConcurrentHashMap<String, WebExtension>()
 
     private val _addons = MutableStateFlow<List<InstalledAddon>>(emptyList())
@@ -191,7 +192,7 @@ class AddonManagerController @Inject constructor(
                 val activeIds = rawList.mapTo(HashSet()) { it.id }
                 extensions.keys.retainAll(activeIds)
                 attached.retainAll(activeIds)
-                actionStates.keys.retainAll(activeIds)
+                actionStates.keys.removeAll { it.extensionId !in activeIds }
                 val installed = rawList.map(::toAddon)
                 _addons.value = installed
                 rawList.forEach(::attachDelegate)
@@ -249,7 +250,7 @@ class AddonManagerController @Inject constructor(
             {
                 extensions.remove(id)
                 attached.remove(id)
-                actionStates.remove(id)
+                actionStates.keys.removeAll { it.extensionId == id }
                 if (_popup.value?.extensionId == id) {
                     closePopup()
                 }
@@ -268,7 +269,7 @@ class AddonManagerController @Inject constructor(
         }
         if (!enabled) {
             // A disabled extension must not keep its action badge or popup alive.
-            actionStates.remove(id)
+            actionStates.keys.removeAll { it.extensionId == id }
             if (_popup.value?.extensionId == id) closePopup()
             _addons.update { list -> list.map { if (it.id == id) it.copy(hasAction = false, badgeText = null) else it } }
         }
@@ -293,12 +294,18 @@ class AddonManagerController @Inject constructor(
 
     fun clickAction(id: String, isPrivate: Boolean = false) {
         popupPrivate = isPrivate
-        val action = actionStates[id]
+        val action = actionFor(id)
         if (action == null) {
             _messages.tryEmit("Extension action is not ready yet")
             return
         }
         action.click()
+    }
+
+    /** Drop tab-specific action overrides when the tab closes. */
+    fun clearSession(session: GeckoSession) {
+        actionStates.keys.removeAll { it.session === session }
+        if (activeSession === session) activeSession = null
     }
 
     fun closePopup() {
@@ -370,8 +377,13 @@ class AddonManagerController @Inject constructor(
         extension.setActionDelegate(ActionDelegate(extension.id))
     }
 
+    /** Prefer the action override for the active tab, falling back to the extension default. */
+    private fun actionFor(extensionId: String): WebExtension.Action? =
+        actionStates[ActionKey(extensionId, activeSession)]
+            ?: actionStates[ActionKey(extensionId, null)]
+
     private fun toAddon(extension: WebExtension): InstalledAddon {
-        val action = actionStates[extension.id]
+        val action = actionFor(extension.id)
         return InstalledAddon(
             id = extension.id,
             name = extension.metaData.name ?: extension.id,
@@ -390,7 +402,7 @@ class AddonManagerController @Inject constructor(
         if (current.none { it.id == extensionId }) return
         _addons.value = current.map { addon ->
             if (addon.id != extensionId) return@map addon
-            val action = actionStates[extensionId]
+            val action = actionFor(extensionId)
             addon.copy(
                 hasAction = action != null,
                 actionTitle = action?.title,
@@ -408,7 +420,7 @@ class AddonManagerController @Inject constructor(
             session: GeckoSession?,
             action: WebExtension.Action,
         ) {
-            actionStates[extensionId] = action
+            actionStates[ActionKey(extensionId, session)] = action
             updateAddon(extensionId)
         }
 
@@ -417,7 +429,7 @@ class AddonManagerController @Inject constructor(
             session: GeckoSession?,
             action: WebExtension.Action,
         ) {
-            actionStates[extensionId] = action
+            actionStates[ActionKey(extensionId, session)] = action
             updateAddon(extensionId)
         }
 

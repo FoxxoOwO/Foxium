@@ -952,6 +952,7 @@ class BrowserViewModel @Inject constructor(
         }
         _tabs.update { list -> list.filterNot { it.id == id } }
         observers.remove(id)?.cancel()
+        addons.clearSession(tab.session.geckoSession)
         userscripts.clearTab(-1L, tab.state.url.takeIf { it.isNotBlank() })
         iconQueriedUrls.remove(id)
         lastRecordedUrls.remove(id)

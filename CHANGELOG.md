@@ -40,6 +40,7 @@ All notable changes to this project are documented in this file.
 - **Add-ons/userscripts:** editing a script into another script's `(namespace, name)` is rejected instead of REPLACE-deleting it; disabled extensions drop their action/badge/popup; the editor no longer overwrites in-progress text on external updates; per-tab status maps are bounded and cleared; popup GeckoSessions are closed on ViewModel teardown.
 - **Background work:** permission-request flows buffer multiple requests; Cast `release()` cancels its collectors before tearing down the proxy.
 - **Userscripts:** the Update action now shows the fetched source in the install preview and applies it only after confirmation (no second download, no unreviewed code); stale `refresh()` results can no longer resurrect removed extensions.
+- **Add-ons:** browser/page actions are keyed by extension and tab, so a tab-specific override can no longer be clicked while another tab is active; per-tab overrides are dropped when the tab closes.
 
 ## [0.79.1] - 2026-11-25
 
