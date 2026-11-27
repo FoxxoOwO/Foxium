@@ -420,6 +420,7 @@
     <string name="msg_cast_failed">Odeslání se nezdařilo</string>
     <string name="msg_no_update_url">Chybí adresa aktualizací</string>
     <string name="msg_up_to_date">Již je aktuální</string>
+    <string name="msg_update_available">Je dostupná verze %1$s – zkontrolujte ji a potvrďte aktualizaci</string>
     <string name="msg_updated_item">%1$s aktualizován na v%2$s</string>
     <string name="msg_update_failed">Aktualizace se nezdařila</string>
     <string name="media_playing">Přehrává se</string>

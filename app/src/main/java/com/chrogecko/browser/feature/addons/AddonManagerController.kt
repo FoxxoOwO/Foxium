@@ -178,9 +178,15 @@ class AddonManagerController @Inject constructor(
         }
     }
 
+    private val refreshGeneration = java.util.concurrent.atomic.AtomicInteger(0)
+
     fun refresh() {
+        val generation = refreshGeneration.incrementAndGet()
         controller.list().accept(
             { list ->
+                // A slow earlier list() callback must not resurrect a removed extension or hide
+                // a freshly installed one.
+                if (refreshGeneration.get() != generation) return@accept
                 val rawList = list.orEmpty()
                 val activeIds = rawList.mapTo(HashSet()) { it.id }
                 extensions.keys.retainAll(activeIds)
@@ -190,7 +196,11 @@ class AddonManagerController @Inject constructor(
                 _addons.value = installed
                 rawList.forEach(::attachDelegate)
             },
-            { error -> _messages.tryEmit("Could not list extensions: ${error?.message}") },
+            { error ->
+                if (refreshGeneration.get() == generation) {
+                    _messages.tryEmit("Could not list extensions: ${error?.message}")
+                }
+            },
         )
     }
 

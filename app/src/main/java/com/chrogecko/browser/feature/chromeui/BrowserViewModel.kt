@@ -1887,7 +1887,14 @@ class BrowserViewModel @Inject constructor(
         val pending = _pendingUserScript.value ?: return
         _pendingUserScript.value = null
         viewModelScope.launch {
-            runCatching { userscripts.install(pending.source, pending.sourceUrl) }
+            val existing = userscripts.findByKey(pending.parsed.name, pending.parsed.namespace)
+            runCatching {
+                if (existing != null) {
+                    userscripts.applyUpdate(existing.id, pending.source)
+                } else {
+                    userscripts.install(pending.source, pending.sourceUrl)
+                }
+            }
                 .onSuccess { _messages.tryEmit(localizedString(R.string.msg_installed_item, it.name)) }
                 .onFailure { _messages.tryEmit(it.message ?: localizedString(R.string.msg_userscript_install_failed)) }
         }
@@ -1934,11 +1941,22 @@ class BrowserViewModel @Inject constructor(
                 is UpdateCheck.NoUpdateUrl -> localizedString(R.string.msg_no_update_url)
                 is UpdateCheck.UpToDate -> localizedString(R.string.msg_up_to_date)
                 is UpdateCheck.Available -> {
-                    runCatching { userscripts.update(id) }
-                        .fold(
-                            onSuccess = { updated -> localizedString(R.string.msg_updated_item, updated.name, updated.version) },
-                            onFailure = { error -> error.message ?: localizedString(R.string.msg_update_failed) },
-                        )
+                    // Show the fetched source in the same preview used for installs: an update
+                    // must never install unreviewed remote code behind a one-click "Update" button.
+                    val installed = userscripts.find(id)
+                    if (installed != null) {
+                        val parsed = runCatching {
+                            com.chrogecko.browser.feature.userscripts.UserScriptParser.parse(result.source)
+                        }.getOrNull()
+                        if (parsed != null) {
+                            _pendingUserScript.value = PendingUserScript(
+                                parsed,
+                                result.source,
+                                installed.updateUrl ?: installed.sourceUrl,
+                            )
+                        }
+                    }
+                    localizedString(R.string.msg_update_available, result.version)
                 }
                 is UpdateCheck.Failed -> result.message
             }

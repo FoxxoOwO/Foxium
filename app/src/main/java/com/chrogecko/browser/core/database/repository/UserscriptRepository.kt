@@ -16,6 +16,9 @@ class UserscriptRepository @Inject constructor(private val dao: UserscriptDao) {
 
     suspend fun find(id: String): UserscriptEntity? = dao.findById(id)
 
+    suspend fun findByNamespaceAndName(namespace: String, name: String): UserscriptEntity? =
+        dao.findByNamespaceAndName(namespace, name)
+
     /** Installs or updates by (namespace, name), keeping the original id and enable state. */
     suspend fun install(script: UserscriptEntity): UserscriptEntity {
         val existing = dao.findByNamespaceAndName(script.namespace, script.name)

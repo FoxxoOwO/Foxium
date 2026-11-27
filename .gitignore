@@ -13,6 +13,8 @@ local.properties
 *.apk
 *.aab
 .kotlin/
+hs_err_pid*.log
+replay_pid*.log
 *.jks
 *.keystore
 *.p12

@@ -406,6 +406,7 @@
     <string name="msg_cast_failed">Cast failed</string>
     <string name="msg_no_update_url">No update URL</string>
     <string name="msg_up_to_date">Already up to date</string>
+    <string name="msg_update_available">Version %1$s is available — review and confirm the update</string>
     <string name="msg_updated_item">Updated %1$s to v%2$s</string>
     <string name="msg_update_failed">Update failed</string>
     <string name="media_playing">Playing</string>

@@ -39,6 +39,7 @@ All notable changes to this project are documented in this file.
 - **Autofill:** fields are identified by opaque ids generated in the content script and filled only when the user selects an entry; page-injected hidden inputs can no longer receive saved card/address values.
 - **Add-ons/userscripts:** editing a script into another script's `(namespace, name)` is rejected instead of REPLACE-deleting it; disabled extensions drop their action/badge/popup; the editor no longer overwrites in-progress text on external updates; per-tab status maps are bounded and cleared; popup GeckoSessions are closed on ViewModel teardown.
 - **Background work:** permission-request flows buffer multiple requests; Cast `release()` cancels its collectors before tearing down the proxy.
+- **Userscripts:** the Update action now shows the fetched source in the install preview and applies it only after confirmation (no second download, no unreviewed code); stale `refresh()` results can no longer resurrect removed extensions.
 
 ## [0.79.1] - 2026-11-25
 

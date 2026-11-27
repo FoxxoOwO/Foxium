@@ -46,7 +46,7 @@ data class UserScriptMenuCommand(
 sealed interface UpdateCheck {
     data object NoUpdateUrl : UpdateCheck
     data object UpToDate : UpdateCheck
-    data class Available(val version: String) : UpdateCheck
+    data class Available(val version: String, val source: String) : UpdateCheck
     data class Failed(val message: String) : UpdateCheck
 }
 
@@ -177,8 +177,31 @@ class UserScriptFeature @Inject constructor(
         if (compareVersions(parsed.version, existing.version) <= 0) {
             UpdateCheck.UpToDate
         } else {
-            UpdateCheck.Available(parsed.version)
+            UpdateCheck.Available(parsed.version, result)
         }
+    }
+
+    suspend fun find(id: String): UserscriptEntity? = repository.find(id)
+
+    suspend fun findByKey(name: String, namespace: String): UserscriptEntity? =
+        repository.findByNamespaceAndName(namespace, name)
+
+    /** Installs already-downloaded source after the user reviewed it; no second network fetch. */
+    suspend fun applyUpdate(id: String, source: String): UserscriptEntity = withContext(Dispatchers.IO) {
+        val existing = repository.find(id)
+            ?: throw UserScriptParseException("Unknown script")
+        val parsed = UserScriptParser.parse(source)
+        val updated = parsed.toEntity(
+            id = existing.id,
+            sourceUrl = existing.sourceUrl,
+            enabled = existing.enabled,
+            installedAt = existing.installedAt,
+            updatedAt = System.currentTimeMillis(),
+        )
+        if (!repository.save(updated)) {
+            throw UserScriptParseException("Another script already uses this name and namespace")
+        }
+        updated
     }
 
     suspend fun update(id: String): UserscriptEntity = withContext(Dispatchers.IO) {
